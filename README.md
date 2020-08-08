@@ -29,12 +29,12 @@ install.packages('nprobust')
 
 ### Software and Implementation
 
-- Calonico, Cattaneo and Farrell (2019): [nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference](references/Calonico-Cattaneo-Farrell_2019_JSS.pdf), Journal of Statistical Software 91(8): 1-33.
+- Calonico, Cattaneo and Farrell (2019): [nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference](references/Calonico-Cattaneo-Farrell_2019_JSS.pdf), _Journal of Statistical Software_ 91(8): 1-33.
 
 ### Technical and Methodological
 
-- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](references/Calonico-Cattaneo-Farrell_2019_JASA.pdf), Journal of the American Statistical Association 113(522): 767-779. [Supplemental Appendix]
+- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](references/Calonico-Cattaneo-Farrell_2019_JASA.pdf), _Journal of the American Statistical Association_ 113(522): 767-779. [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2019_JASA--Supplemental.pdf).
 
-- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](references/Calonico-Cattaneo-Farrell_2020_wp.pdf). [Supplemental Appendix]
+- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](references/Calonico-Cattaneo-Farrell_2020_wp.pdf). [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2020_wp--Supplemental.pdf).
 
 <br><br>
