@@ -35,6 +35,6 @@ install.packages('nprobust')
 
 - Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](references/Calonico-Cattaneo-Farrell_2019_JASA.pdf), _Journal of the American Statistical Association_ 113(522): 767-779. [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2019_JASA--Supplemental.pdf).
 
-- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](references/Calonico-Cattaneo-Farrell_2020_wp.pdf). [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2020_wp--Supplemental.pdf).
+- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](references/Calonico-Cattaneo-Farrell_2020_wp.pdf), working paper. [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2020_wp--Supplemental.pdf).
 
 <br><br>
