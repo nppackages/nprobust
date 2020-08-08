@@ -8,7 +8,7 @@ This work was supported by the National Science Foundation through grant [SES-14
 
 To install/update in Stata type:
 ```
-net install nprobust, from(https://sites.google.com/site/nppackages/nprobust/stata) replace
+net install nprobust, from(https://raw.githubusercontent.com/nppackages/nprobust/master/stata) replace
 ```
 
 - Help: [kdrobust](stata/kdrobust.pdf), [kdbwselect](stata/kdbwselect.pdf), [lprobust](stata/lprobust.pdf), [lpbwselect](stata/lpbwselect.pdf).
