@@ -1,0 +1,29 @@
+v 0.3.1
+d STATA Package: NPROBUST
+d 
+d Authors: Sebastian Calonico, Department of Health Policy and Management, Columbia University, sebastian.calonico@columbia.edu
+d          Matias D. Cattaneo, Operations Research and Financial Engineering, Princeton University, cattaneo@princeton.edu
+d          Max H. Farrell, Booth School of Business, University of Chicago, max.farrell@chicagobooth.edu
+d
+d Date: 06-20-2020
+d 
+f kdbwselect.ado
+f kdbwselect.sthlp
+f kdrobust.ado
+f kdrobust.sthlp
+f lpbwselect.ado
+f lpbwselect.sthlp
+f lprobust.ado
+f lprobust.sthlp
+f nprobust_K_fun.mo
+f nprobust_L_fun.mo
+f nprobust_lp_bw.mo
+f nprobust_lp_cer.mo
+f nprobust_lp_coef.mo
+f nprobust_lp_kweight.mo
+f nprobust_lp_mse.mo
+f nprobust_lp_mse_dpi.mo
+f nprobust_lp_q.mo
+f nprobust_lp_res.mo
+f nprobust_lp_vce.mo
+f nprobust_w_fun.mo

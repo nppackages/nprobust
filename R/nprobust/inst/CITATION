@@ -1,0 +1,20 @@
+bibentry(bibtype = "Article",
+  title        = "{nprobust}: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference",
+  author       = c(person(given = "Sebastian",
+                          family = "Calonico",
+                          email = "sebastian.calonico@columbia.edu"),
+                   person(given = c("Matias", "D."),
+                          family = "Cattaneo",
+                          email = "cattaneo@princeton.edu"),
+                   person(given = c("Max", "H."),
+                          family = "Farrell",
+                          email = "max.farrell@chicagobooth.edu")),
+  journal      = "Journal of Statistical Software",
+  year         = "2019",
+  volume       = "91",
+  number       = "8",
+  pages        = "1--33",
+  doi          = "10.18637/jss.v091.i08",
+  header       = "To cite nprobust in publications use:"
+)
+
