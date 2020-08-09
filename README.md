@@ -4,6 +4,10 @@ The `nprobust` package provides Stata and R implementations of bandwidth selecti
 
 This work was supported by the National Science Foundation through grant [SES-1459931](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1459931) and [SES-1947805](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1947805).
 
+## Website
+
+https://nppackages.github.io/nprobust
+
 ## Stata Implementation
 
 To install/update in Stata type:
@@ -29,12 +33,15 @@ install.packages('nprobust')
 
 ### Software and Implementation
 
-- Calonico, Cattaneo and Farrell (2019): [nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference](references/Calonico-Cattaneo-Farrell_2019_JSS.pdf), _Journal of Statistical Software_ 91(8): 1-33.
+- Calonico, Cattaneo and Farrell (2019): [nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JSS.pdf).<br>
+_Journal of Statistical Software_ 91(8): 1-33.
 
 ### Technical and Methodological
 
-- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](references/Calonico-Cattaneo-Farrell_2019_JASA.pdf), _Journal of the American Statistical Association_ 113(522): 767-779. [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2019_JASA--Supplemental.pdf).
+- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JASA.pdf).<br>
+_Journal of the American Statistical Association_ 113(522): 767-779. [Supplemental Appendix](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JASA--Supplemental.pdf).
 
-- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](references/Calonico-Cattaneo-Farrell_2020_wp.pdf), working paper. [Supplemental Appendix](references/Calonico-Cattaneo-Farrell_2020_wp--Supplemental.pdf).
+- Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2020_wp.pdf).<br>
+Working paper. [Supplemental Appendix](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2020_wp--Supplemental.pdf).
 
 <br><br>
