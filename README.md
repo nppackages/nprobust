@@ -38,9 +38,9 @@ _Journal of Statistical Software_ 91(8): 1-33.
 
 ### Technical and Methodological
 
-- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JASA.pdf).<br>
+- Calonico, Cattaneo and Farrell (2018): [On the Effect of Bias Estimation on Coverage Accuracy in Nonparametric Inference](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2018_JASA.pdf).<br>
 _Journal of the American Statistical Association_ 113(522): 767-779.<br>
-[Supplemental Appendix](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JASA--Supplemental.pdf).
+[Supplemental Appendix](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2018_JASA--Supplement.pdf).
 
 - Calonico, Cattaneo and Farrell (2020): [Coverage Error Optimal Confidence Intervals for Local Polynomial Regression](https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2020_wp.pdf).<br>
 Working paper.<br>
