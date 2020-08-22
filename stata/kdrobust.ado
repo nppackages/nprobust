@@ -1,4 +1,4 @@
-*!version 0.3.1  06-20-2020
+*!version 0.3.2  2020-08-22
 
 capture program drop kdrobust 
 program define kdrobust, eclass

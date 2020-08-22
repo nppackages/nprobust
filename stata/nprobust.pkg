@@ -1,11 +1,11 @@
-v 0.3.1
+v 0.3.2
 d STATA Package: NPROBUST
 d 
 d Authors: Sebastian Calonico, Department of Health Policy and Management, Columbia University, sebastian.calonico@columbia.edu
 d          Matias D. Cattaneo, Operations Research and Financial Engineering, Princeton University, cattaneo@princeton.edu
 d          Max H. Farrell, Booth School of Business, University of Chicago, max.farrell@chicagobooth.edu
 d
-d Date: 06-20-2020
+d Date: 2020-08-22
 d 
 f kdbwselect.ado
 f kdbwselect.sthlp
