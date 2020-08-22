@@ -44,7 +44,7 @@
 
 {p 4 8}{cmd:lprobust} implements local polynomial regression point estimators with robust bias-corrected confidence intervals and inference procedures developed in
 {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2018_JASA.pdf":Calonico, Cattaneo and Farrell (2018)}. 
-See also {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2019_CEopt.pdf":Calonico, Cattaneo and Farrell (2020)} for related optimality results. 
+See also {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2020_CEopt.pdf":Calonico, Cattaneo and Farrell (2020)} for related optimality results. 
 It also implements other estimation and inference procedures available in the literature. See Wand and Jones (1995) and Fan and Gijbels (1996) for background references.{p_end}
 
 {p 4 8} A detailed introduction to this command is given in
