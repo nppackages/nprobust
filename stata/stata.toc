@@ -1,3 +1,6 @@
-v 0.3.2
+v 3
+d NPROBUST: Estimation and inference using kernel density and local polynomial regression methods.
+d           https://nppackages.github.io/nprobust
+d
 p nprobust
 
