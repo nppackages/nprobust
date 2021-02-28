@@ -27,7 +27,7 @@ install.packages('nprobust')
 
 - Help: [R Manual](https://cran.r-project.org/web/packages/nprobust/nprobust.pdf), [CRAN repository](https://cran.r-project.org/package=nprobust).
 
-- Replication: [R-script](R/nprobust_illustration.r), [nprobust_data](R/nprobust_data.csv).
+- Replication: [R-script](R/nprobust_illustration.R), [nprobust_data](R/nprobust_data.csv).
 
 ## References
 
