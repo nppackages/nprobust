@@ -17,7 +17,7 @@ net install nprobust, from(https://raw.githubusercontent.com/nppackages/nprobust
 
 - Help: [kdrobust](stata/kdrobust.pdf), [kdbwselect](stata/kdbwselect.pdf), [lprobust](stata/lprobust.pdf), [lpbwselect](stata/lpbwselect.pdf).
 
-- Replication: [do-file](stata/nprobust_illustration.do), [nprobust_data](stata/nprobust_data.do).
+- Replication: [do-file](stata/nprobust_illustration.do), [nprobust_data](stata/nprobust_data.dta).
 
 ## R Implementation
 To install/update in R type:
