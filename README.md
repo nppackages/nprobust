@@ -8,6 +8,16 @@ This work was supported by the National Science Foundation through grant [SES-14
 
 https://nppackages.github.io/nprobust
 
+## R Implementation
+To install/update in R type:
+```
+install.packages('nprobust')
+```
+
+- Help: [R Manual](https://cran.r-project.org/web/packages/nprobust/nprobust.pdf), [CRAN repository](https://cran.r-project.org/package=nprobust).
+
+- Replication: [R-script](R/nprobust_illustration.R), [nprobust_data](R/nprobust_data.csv).
+
 ## Stata Implementation
 
 To install/update in Stata type:
@@ -18,16 +28,6 @@ net install nprobust, from(https://raw.githubusercontent.com/nppackages/nprobust
 - Help: [kdrobust](stata/kdrobust.pdf), [kdbwselect](stata/kdbwselect.pdf), [lprobust](stata/lprobust.pdf), [lpbwselect](stata/lpbwselect.pdf).
 
 - Replication: [do-file](stata/nprobust_illustration.do), [nprobust_data](stata/nprobust_data.dta).
-
-## R Implementation
-To install/update in R type:
-```
-install.packages('nprobust')
-```
-
-- Help: [R Manual](https://cran.r-project.org/web/packages/nprobust/nprobust.pdf), [CRAN repository](https://cran.r-project.org/package=nprobust).
-
-- Replication: [R-script](R/nprobust_illustration.R), [nprobust_data](R/nprobust_data.csv).
 
 ## References
 
