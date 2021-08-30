@@ -8,6 +8,10 @@ This work was supported by the National Science Foundation through grant [SES-14
 
 https://nppackages.github.io/nprobust
 
+## Queries and Requests
+
+Please email: [nprobust@googlegroups.com](mailto:nprobust@googlegroups.com)
+
 ## R Implementation
 To install/update in R type:
 ```
