@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.3.2  2020-08-22}{...}
+{* *! version 0.4.0  2025-04-14}{...}
 {viewerjumpto "Syntax" "lpbwselect##syntax"}{...}
 {viewerjumpto "Description" "lpbwselect##description"}{...}
 {viewerjumpto "Options" "lpbwselect##options"}{...}
@@ -37,7 +37,7 @@
 
 {p 4 8}{cmd:lpbwselect} implements bandwidth selectors for local polynomial regression point estimators and inference procedures developed in
 {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2018_JASA.pdf":Calonico, Cattaneo and Farrell (2018)}. 
-See also {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2020_CEopt.pdf":Calonico, Cattaneo and Farrell (2020)} for related optimality results.
+See also {browse "https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2022_Bernoulli.pdf":Calonico, Cattaneo and Farrell (2022)} for related optimality results.
 It also implements other bandwidth selectors available in the literature. See Wand and Jones (1995) and Fan and Gijbels (1996) for background references.{p_end}
 
 {p 4 8} A detailed introduction to this command is given in
@@ -147,8 +147,8 @@ Default is {opt bwregul(1)}.{p_end}
 {browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JSS.pdf":nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference}.
 {it:Journal of Statistical Software}, 91(8): 1-33. {browse "http://dx.doi.org/10.18637/jss.v091.i08":doi: 10.18637/jss.v091.i08}.{p_end}
 
-{p 4 8}Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2020.
-{browse "https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2020_CEopt.pdf":Coverage Error Optimal Confidence Intervals for Local Polynomial Regression}, working paper.{p_end}
+{p 4 8}Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2022.
+{browse "https://rdpackages.github.io/references/Calonico-Cattaneo-Farrell_2022_Bernoulli.pdf":Coverage Error Optimal Confidence Intervals for Local Polynomial Regression}, {it:Bernoulli}, forthcoming.{p_end}
 
 {p 4 8}Fan, J., and Gijbels, I. 1996. Local Polynomial Modelling and Its Applications, London: Chapman and Hall.{p_end}
 
@@ -157,12 +157,12 @@ Default is {opt bwregul(1)}.{p_end}
 
 {title:Authors}
 
-{p 4 8}Sebastian Calonico, Columbia University, New York, NY.
-{browse "mailto:sebastian.calonico@columbia.edu":sebastian.calonico@columbia.edu}.{p_end}
+{p 4 8}Sebastian Calonico, University of California, Davis, CA.
+{browse "mailto:scalonico@ucdavis.edu":scalonico@ucdavis.edu}.{p_end}
 
 {p 4 8}Matias D. Cattaneo, Princeton University, Princeton, NJ.
 {browse "mailto:cattaneo@princeton.edu":cattaneo@princeton.edu}.{p_end}
 
-{p 4 8}Max H. Farrell, University of Chicago, Chicago, IL.
-{browse "mailto:max.farrell@chicagobooth.edu":max.farrell@chicagobooth.edu}.{p_end}
+{p 4 8}Max H. Farrell, University of California, Santa Barbara, CA.
+{browse "mailto:maxhfarrell@ucsb.edu":maxhfarrell@ucsb.edu}.{p_end}
 

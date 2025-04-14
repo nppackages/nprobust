@@ -1,7 +1,7 @@
 ########################################################################
 ## REPLICATION FILES: Calonico, Cattaneo and Farrell (2018)
 ## nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference
-## Last update: 21-Oct-2019
+## Last update: 03-Apr-2025
 ########################################################################
 rm(list=ls(all=TRUE))
 library(TeachingDemos); library(ggplot2);

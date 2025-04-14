@@ -1,4 +1,4 @@
-*!version 0.3.2  2020-08-22
+*!version 0.4.0  2025-04-14
 
 capture program drop kdbwselect
 program define kdbwselect, eclass

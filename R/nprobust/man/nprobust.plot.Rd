@@ -6,7 +6,7 @@
 
 Companion commands: \code{\link{lprobust}} for local polynomial point estimation and inference procedures, and \code{\link{kdrobust}} for kernel density point estimation and inference procedures.
 
-For more details, and related Stata and R packages useful for empirical analysis, visit \url{https://sites.google.com/site/nppackages/}.
+For more details, and related Stata and R packages useful for empirical analysis, visit \url{https://nppackages.github.io/}.
 }
 \usage{
 nprobust.plot(..., alpha = NULL, type = NULL, CItype = NULL,
@@ -34,22 +34,22 @@ accordingly.}
 
 \item{lty}{Line type for point estimates, only effective if \code{type} is \code{"line"} or
 \code{"both"}. \code{1} for solid line, \code{2} for dashed line, \code{3} for dotted line.
-For other options, see the instructions for \code{\link{ggplot2}} or \code{\link{par}}. If
+For other options, see the instructions for \code{\link[ggplot2]{ggplot2}} or \code{\link{par}}. If
 more than one is provided, they will be applied to data series accordingly.}
 
 \item{lwd}{Line width for point estimates, only effective if \code{type} is \code{"line"} or
 \code{"both"}. Should be strictly positive. For other options, see the instructions for
-\code{\link{ggplot2}} or \code{\link{par}}. If more than one is provided, they will be applied
+\code{\link[ggplot2]{ggplot2}} or \code{\link{par}}. If more than one is provided, they will be applied
 to data series accordingly.}
 
 \item{lcol}{Line color for point estimates, only effective if \code{type} is \code{"line"} or
 \code{"both"}. \code{1} for black, \code{2} for red, \code{3} for green, \code{4} for blue.
-For other options, see the instructions for \code{\link{ggplot2}} or \code{\link{par}}. If
+For other options, see the instructions for \code{\link[ggplot2]{ggplot2}}or \code{\link{par}}. If
 more than one is provided, they will be applied to data series
 accordingly.}
 
 \item{pty}{Scatter plot type for point estimates, only effective if \code{type} is \code{"points"} or
-\code{"both"}. For options, see the instructions for \code{\link{ggplot2}} or \code{\link{par}}. If
+\code{"both"}. For options, see the instructions for \code{\link[ggplot2]{ggplot2}} or \code{\link{par}}. If
 more than one is provided, they will be applied to data series
 accordingly.}
 
@@ -60,7 +60,7 @@ accordingly.}
 \item{pcol}{Scatter plot color for point estimates, only effective if \code{type} is \code{"points"} or
 \code{"both"}. \code{1} for black, \code{2} for red, \code{3}
 for green, \code{4} for blue.
-For other options, see the instructions for \code{\link{ggplot2}} or \code{\link{par}}. If
+For other options, see the instructions for \code{\link[ggplot2]{ggplot2}} or \code{\link{par}}. If
 more than one is provided, they will be applied to data series
 accordingly.}
 
@@ -70,14 +70,14 @@ accordingly.}
 
 \item{CIcol}{color for confidence region. \code{1} for black, \code{2} for red, \code{3}
 for green, \code{4} for blue.
-For other options, see the instructions for \code{\link{ggplot2}} or \code{\link{par}}. If
+For other options, see the instructions for \code{\link[ggplot2]{ggplot2}} or \code{\link{par}}. If
 more than one is provided, they will be applied to data series
 accordingly.}
 \item{legendTitle}{String, title of legend.}
 \item{legendGroups}{String Vector, group names used in legend.}
 }
 \value{
-A standard \code{\link{ggplot2}} object is returned, hence can be used for further customization.
+A standard \code{\link[ggplot2]{ggplot2}} object is returned, hence can be used for further customization.
 }
 \details{
 Companion command: \code{\link{lprobust}} for local polynomial-based regression functions and derivatives estimation.
@@ -89,15 +89,15 @@ est <- lprobust(y,x)
 nprobust.plot(est)
 }
 \references{
-Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2019. \href{http://sites.google.com/site/nppackages/nprobust/Calonico-Cattaneo-Farrell_2019_JSS.pdf}{nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference}. Journal of Statistical Software, 91(8): 1-33. \doi{http://dx.doi.org/10.18637/jss.v091.i08}.
+Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2019. \href{https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JSS.pdf}{nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference}. Journal of Statistical Software, 91(8): 1-33. \doi{http://dx.doi.org/10.18637/jss.v091.i08}.
 }
 \seealso{
-\code{\link{lprobust}}, \code{\link{kdrobust}}, \code{\link{ggplot2}}
+\code{\link{lprobust}}, \code{\link{kdrobust}}, \code{\link[ggplot2]{ggplot2}}
 }
 \author{
-Sebastian Calonico, Columbia University, New York, NY.  \email{sebastian.calonico@columbia.edu}.
+Sebastian Calonico, University of California, Davis, CA.  \email{scalonico@ucdavis.edu}.
 
 Matias D. Cattaneo, Princeton University, Princeton, NJ.  \email{cattaneo@princeton.edu}.
 
-Max H. Farrell, University of Chicago, Chicago, IL. \email{max.farrell@chicagobooth.edu}.
+Max H. Farrell, University of California, Santa Barbara, CA. \email{maxhfarrell@ucsb.edu}.
 }

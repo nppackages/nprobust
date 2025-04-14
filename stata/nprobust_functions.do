@@ -1,7 +1,5 @@
-*!version 0.3.2  2020-08-22
- 
-
- 
+*!version 0.4.0  2025-04-14
+  
 capture mata mata drop nprobust_w_fun()
 mata
 real matrix nprobust_w_fun(real matrix u, string kernel)
