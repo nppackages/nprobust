@@ -1,8 +1,9 @@
-*!version 0.4.0  2025-04-14
+*!version 1.0.0  2026-05-17
 
-capture program drop lprobust 
+capture program drop lprobust
 program define lprobust, eclass
-	syntax anything [if] [in] [, eval(varname) neval(real 0) deriv(real 0) p(real 1) h(string) b(string) rho(real 1) kernel(string) bwselect(string) bwcheck(real 21) vce(string) level(real 95) separator(integer 5) bwregul(real 1) interior genvars plot covgrid graph_options(string)]
+	version 14.0
+	syntax anything [if] [in] [, eval(varname) neval(real 0) deriv(real 0) p(real 1) h(string) b(string) rho(real 1) kernel(string) bwselect(string) bwcheck(real 21) imsegrid(real 30) vce(string) level(real 95) separator(integer 5) bwregul(real 1) interior genvars plot covgrid graph_options(string) weights(varname numeric) masspoints(string)]
 	
 	*disp in yellow "Preparing data." 
 	marksample touse
@@ -18,39 +19,91 @@ program define lprobust, eclass
 	
 	******************** Set VCE ***************************
 	local nnmatch = 3
-	tokenize `vce'	
+	tokenize `vce'
 	local w : word count `vce'
 	if `w' == 1 {
 		local vce_select `"`1'"'
 	}
 	if `w' == 2 {
 		local vce_select `"`1'"'
-		if ("`vce_select'"=="nn")      local nnmatch     `"`2'"'
-		if ("`vce_select'"=="cluster" | "`vce_select'"=="nncluster") local clustvar `"`2'"'	
+		if ("`vce_select'"=="nn") local nnmatch `"`2'"'
+		if inlist("`vce_select'","cluster","nncluster","cr1","cr2","cr3","hc0","hc1","hc2","hc3") local clustvar `"`2'"'
 	}
 	if `w' == 3 {
 		local vce_select `"`1'"'
 		local clustvar   `"`2'"'
 		local nnmatch    `"`3'"'
-		if ("`vce_select'"!="cluster" & "`vce_select'"!="nncluster") di as error  "{err}{cmd:vce()} incorrectly specified"  
+		if !inlist("`vce_select'","cluster","nncluster","cr1","cr2","cr3","nn") {
+			di as error "{err}{cmd:vce()} incorrectly specified"
+			exit 125
+		}
 	}
 	if `w' > 3 {
-		di as error  "{err}{cmd:vce()} incorrectly specified"  
+		di as error "{err}{cmd:vce()} incorrectly specified"
 		exit 125
 	}
-	
-	local vce_type = "NN"
-	if ("`vce_select'"=="hc0")     		 local vce_type = "HC0"
-	if ("`vce_select'"=="hc1")      	 local vce_type = "HC1"
-	if ("`vce_select'"=="hc2")      	 local vce_type = "HC2"
-	if ("`vce_select'"=="hc3")      	 local vce_type = "HC3"
-	if ("`vce_select'"=="cluster")  	 local vce_type = "Cluster"
-	if ("`vce_select'"=="nncluster") 	 local vce_type = "NNcluster"
 
-	if ("`vce_select'"=="cluster" | "`vce_select'"=="nncluster") local cluster = "cluster"
-	if ("`vce_select'"=="cluster")       local vce_select = "hc0"
-	if ("`vce_select'"=="nncluster")     local vce_select = "nn"
-	if ("`vce_select'"=="")              local vce_select = "nn"
+	* Disallow vce(nncluster ...): warn and shift to cr1 (default when clusters).
+	if ("`vce_select'"=="nncluster") {
+		di as text "Warning: vce(nncluster) is not supported. Switching to vce(cr1) (the default when clusters)."
+		local vce_select = "cr1"
+	}
+
+	* With a cluster variable, map hc0/hc1/hc2/hc3 to cr1/cr1/cr2/cr3.
+	* Per cluster_validation design: hc0+cluster is a silent remap to cr1
+	* (the default); hc1/2/3 produce a warning so the user knows their
+	* requested HC variant is being upgraded to its cluster analogue.
+	if ("`clustvar'"!="") {
+		if ("`vce_select'"=="hc0") local vce_select = "cr1"
+		if ("`vce_select'"=="hc1") {
+			di as text "Warning: vce(hc1 `clustvar') is not a cluster option. Switching to vce(cr1 `clustvar')."
+			local vce_select = "cr1"
+		}
+		if ("`vce_select'"=="hc2") {
+			di as text "Warning: vce(hc2 `clustvar') is not a cluster option. Switching to vce(cr2 `clustvar')."
+			local vce_select = "cr2"
+		}
+		if ("`vce_select'"=="hc3") {
+			di as text "Warning: vce(hc3 `clustvar') is not a cluster option. Switching to vce(cr3 `clustvar')."
+			local vce_select = "cr3"
+		}
+		* bare vce(cluster clustvar) is equivalent to cr1 (default).
+		if ("`vce_select'"=="cluster") local vce_select = "cr1"
+	}
+
+	* cr1/cr2/cr3 require a cluster variable; otherwise error.
+	if inlist("`vce_select'","cr1","cr2","cr3") {
+		if ("`clustvar'"=="") {
+			di as error "{err}{cmd:vce(`vce_select' clustervar)} requires a cluster variable"
+			exit 125
+		}
+	}
+
+	* Preserve the post-remap vce option for e(vce_select) before the
+	* internal cr* -> hc* mapping below. Mirrors rdrobust convention.
+	local vce_raw = "`vce_select'"
+	if ("`vce_raw'"=="") local vce_raw = "nn"
+
+	* Display label
+	local vce_type = "NN"
+	if ("`vce_select'"=="hc0") local vce_type = "HC0"
+	if ("`vce_select'"=="hc1") local vce_type = "HC1"
+	if ("`vce_select'"=="hc2") local vce_type = "HC2"
+	if ("`vce_select'"=="hc3") local vce_type = "HC3"
+	if ("`vce_select'"=="cr1") local vce_type = "CR1"
+	if ("`vce_select'"=="cr2") local vce_type = "CR2"
+	if ("`vce_select'"=="cr3") local vce_type = "CR3"
+
+	* Any non-empty clustvar triggers cluster-robust variance.
+	if ("`clustvar'"!="") local cluster = "cluster"
+
+	* Internal mapping: cr1/cr2/cr3 -> hc1/hc2/hc3 so the existing residual
+	* paths (hc-only) work unchanged. cr_type downstream reads the internal
+	* name and applies the right multiplier in nprobust_lp_cluster_meat().
+	if ("`vce_select'"=="cr1") local vce_select = "hc1"
+	if ("`vce_select'"=="cr2") local vce_select = "hc2"
+	if ("`vce_select'"=="cr3") local vce_select = "hc3"
+	if ("`vce_select'"=="")    local vce_select = "nn"
 		
 	if ("`deriv'">"0" & "`p'"=="1") local p = `deriv'+1
 	local q = `p'+1
@@ -83,23 +136,19 @@ program define lprobust, eclass
 	********************************************************************************
 	**** error check: grid()
 	if ("`eval'" == "") {
-		if ("`neval'" == "0") {
-			*tempvar temp_grid temp_dup
-			*qui duplicates tag `x' if `touse', gen(`temp_dup')
-			*qui gen `temp_grid' = `x' if `temp_dup'==0
-			*qui su `temp_grid'
-			*local neval = r(N)
-			local neval = 30
-			tempvar temp_grid	
-			local nquant = `neval'+1
-			pctile `temp_grid' = `x' if `touse', nq(`nquant')
+		if ("`neval'" == "0") local neval = 30
+		tempvar temp_grid
+		qui gen double `temp_grid' = .
+		if (`neval' == 1) {
+			qui replace `temp_grid' = `x_min' in 1
+		}
+		else {
+			forvalues i = 1/`neval' {
+				local eval_i = `x_min' + (`x_max' - `x_min') * (`i' - 1) / (`neval' - 1)
+				qui replace `temp_grid' = `eval_i' in `i'
 			}
-			else {
-				tempvar temp_grid	
-				local nquant = `neval'+1
-				pctile `temp_grid' = `x' if `touse', nq(`nquant')
-			}		
-		} 
+		}
+	}
 	else {
 		cap confirm numeric variable `eval'
 		if _rc {
@@ -126,9 +175,34 @@ program define lprobust, eclass
 
 	********************************************************************************
 	**** error check: vce()
-	if ("`vce_select'"~="nn" & "`vce_select'"~="" & "`vce_select'"~="cluster" & "`vce_select'"~="nncluster" & "`vce_select'"~="hc1" & "`vce_select'"~="hc2" & "`vce_select'"~="hc3" & "`vce_select'"~="hc0"){ 
-		 di as error  "{err}{cmd:vce()} incorrectly specified"  
+	if ("`vce_select'"~="nn" & "`vce_select'"~="" & "`vce_select'"~="cluster" & "`vce_select'"~="nncluster" & "`vce_select'"~="hc1" & "`vce_select'"~="hc2" & "`vce_select'"~="hc3" & "`vce_select'"~="hc0"){
+		 di as error  "{err}{cmd:vce()} incorrectly specified"
 		 exit 7
+	}
+
+	**** error check: level()
+	if (`level' >= 100 | `level' <= 0) {
+		 di as error  "{err}{cmd:level()} should be a number in (0, 100)"
+		 exit 125
+	}
+
+	**** error check: rho()
+	if (`rho' < 0) {
+		 di as error  "{err}{cmd:rho()} should be non-negative"
+		 exit 125
+	}
+
+	**** error check: bwcheck()
+	if (`bwcheck' < 0 | (`bwcheck' != round(`bwcheck'))) {
+		 di as error  "{err}{cmd:bwcheck()} must be a non-negative integer"
+		 exit 125
+	}
+
+	**** error check: masspoints()
+	if ("`masspoints'" != "" & ///
+	    !inlist("`masspoints'", "check", "off")) {
+		 di as error  "{err}{cmd:masspoints()} must be 'check' or 'off'"
+		 exit 125
 	}
 		
 			
@@ -170,14 +244,32 @@ program define lprobust, eclass
 	}
 
 	********************************************************************************
+	**** error check: masspoints()
+	if ("`masspoints'" == "") local masspoints = "check"
+	if ("`masspoints'" != "check" & "`masspoints'" != "off") {
+		di as err `"masspoints(): incorrectly specified: options(check, off)"'
+		exit 198
+	}
+
+	********************************************************************************
+	**** weights()
+	if ("`weights'" != "") {
+		cap confirm numeric variable `weights'
+		if _rc {
+			di as err `"weights(): `weights' is not a numeric variable"'
+			exit 198
+		}
+	}
+
+	********************************************************************************
 	**** error check: bw()
 	if ("`h'" == "") {
 		tempvar temp_h
 		tempvar temp_b		
 		*su `temp_grid'
-		qui lpbwselect `y' `x' if `touse', eval(`temp_grid') deriv(`deriv') p(`p')  kernel(`kernel') vce(`vce')  bwregul(`bwregul') bwcheck(`bwcheck') `interior' bwselect(`bwselect') genvars 		
-		qui gen `temp_h' = lpbwselect_h
-		qui gen `temp_b' = lpbwselect_b
+		qui lpbwselect `y' `x' if `touse', eval(`temp_grid') deriv(`deriv') p(`p')  kernel(`kernel') vce(`vce')  bwregul(`bwregul') bwcheck(`bwcheck') imsegrid(`imsegrid') `interior' bwselect(`bwselect') genvars `=cond("`weights'"=="","","weights(`weights')")' masspoints(off)
+		qui gen double `temp_h' = lpbwselect_h
+		qui gen double `temp_b' = lpbwselect_b
 		if (`rho'>0)  {
 				qui replace `temp_b' = lpbwselect_h/`rho'
 		}
@@ -193,11 +285,10 @@ program define lprobust, eclass
 				exit 198
 			} 
 			else {
-				tempvar temp_h			
-				qui gen `temp_h' = "`h'" if `temp_grid' != .
-				capture destring `temp_h', replace
+				tempvar temp_h
+				qui gen double `temp_h' = real("`h'") if `temp_grid' != .
 				cap confirm numeric variable `temp_h'
-				if _rc {
+				if _rc | missing(`temp_h'[1]) {
 					di as err `"h(): `h' is not numeric"'
 					exit 198
 				}
@@ -218,6 +309,56 @@ program define lprobust, eclass
 			local temp_h "`h'"
 			local bwselect = "Manual"
 		}
+
+		* Handle b() option in manual-h mode. The auto-bwselect branch
+		* (above) populates temp_b from lpbwselect output; the manual-h
+		* branch must do the equivalent or downstream st_data calls hit
+		* "varlist required" (rc=3598). Logic mirrors the h() handling:
+		*  - b() as scalar    -> create tempvar, fill on temp_grid rows
+		*  - b() as varname   -> use the user's variable directly
+		*  - b() unspecified  -> default to b = h / rho (matches auto path)
+		if ("`b'" != "") {
+			cap confirm numeric variable `b'
+			if _rc {
+				capture confirm variable `b'
+				if (!_rc) {
+					di as err `"b(): `b' is not a numeric variable"'
+					exit 198
+				}
+				else {
+					tempvar temp_b
+					qui gen double `temp_b' = real("`b'") if `temp_grid' != .
+					cap confirm numeric variable `temp_b'
+					if _rc | missing(`temp_b'[1]) {
+						di as err `"b(): `b' is not numeric"'
+						exit 198
+					}
+				}
+			}
+			else {
+				if ("`x'" == "`grid'") {
+					qui count if `b' != . & `touse'
+				}
+				else {
+					qui count if `b' != .
+				}
+				local nb = r(N)
+				if (`nb' != `neval') {
+					di as err `"b(): `b' has different length as grid()"'
+					exit 198
+				}
+				local temp_b "`b'"
+			}
+		}
+		else {
+			tempvar temp_b
+			if (`rho' > 0) {
+				qui gen double `temp_b' = `temp_h' / `rho' if `temp_grid' != .
+			}
+			else {
+				qui gen double `temp_b' = `temp_h' if `temp_grid' != .
+			}
+		}
 	}
 
 
@@ -231,7 +372,7 @@ program define lprobust, eclass
 	**** temporaty varaibles for plotting
 	if ("`plot'" != "" & "`genvars'" == "") {
 		tempvar plot_eval
-		tempvar plot_gx_us
+		tempvar plot_tau_us
 		tempvar plot_cil_rb
 		tempvar plot_cir_rb
 	}
@@ -246,24 +387,30 @@ program define lprobust, eclass
 	qui gen `temp_touse' = `touse'
 
 	mata{
-	
-		Y = st_data(., "`y'", "`temp_touse'") //; x
+
+		Y = st_data(., "`y'", "`temp_touse'") //; y
 		X = st_data(., "`x'", "`temp_touse'") //; x
-				
+		if ("`weights'"=="") {
+			wts = J(rows(X), 1, 1)
+		}
+		else {
+			wts = st_data(., "`weights'", "`temp_touse'")
+		}
+
 		if ("`x'" == "`eval'") {
 			eval    = st_data(., "`temp_grid'"	, "`temp_touse'") //; grid
 			h       = st_data(., "`temp_h'"	, "`temp_touse'") //; bw
 			b       = st_data(., "`temp_b'"	, "`temp_touse'") //; bw
 		}
-		else {	
+		else {
 			eval     = st_data(., "`temp_grid'"	, 0) //; grid
 			h        = st_data(., "`temp_h'"	, 0) //; bw
-			b        = st_data(., "`temp_h'"	, 0) //; bw
+			b        = st_data(., "`temp_b'"	, 0) //; bw
 		}
-		
+
 		C = 0
 		if ("`cluster'"~="") {
-			C = st_data(., "`clustvar'", "`temp_touse'") 
+			C = st_data(., "`clustvar'", "`temp_touse'")
 			dC=1
 		}
 				
@@ -274,30 +421,41 @@ program define lprobust, eclass
 			sort_id = 1::N
 			
 			if ("`vce_select'"=="nn") {
-			*dups      = st_data(.,("`dups'"), 0); dupsid    = st_data(.,("`dupsid'"), 0)
-			sort_data = X,Y,sort_id
+			// Sort (X, Y, wts[, C]) by X, keeping all vectors aligned.
+			sort_data = X, Y, wts, sort_id
 			if ("`cluster'"~="") {
-				sort_data = X,Y,C,sort_id
+				sort_data = X, Y, wts, C, sort_id
 			}
-			
+
 			sort_data = sort(sort_data,1)
-			X = sort_data[,1]
-			Y = sort_data[,2]
-			sort_id = sort_data[,3]
+			X   = sort_data[,1]
+			Y   = sort_data[,2]
+			wts = sort_data[,3]
 			if ("`cluster'"~="") {
-				C = sort_data[,3]
+				C = sort_data[,4]
+				sort_id = sort_data[,5]
+			}
+			else {
 				sort_id = sort_data[,4]
 			}
-			
-			for (j=1; j<=`n'; j++) {
-				*dups[j]=sum(X==X[j])
-				dups[j] = length(selectindex(X:==X[j]))
+
+			// O(N) duplicate counter on the already-sorted X via run detection.
+			if (`n'==1) {
+				dups   = 1
+				dupsid = 1
 			}
-			j=1
-			while(j<=`n') {
-				dupsid[j::(j+dups[j]-1)]= 1::dups[j]
-				j = j + dups[j]
-			}				
+			else {
+				bdy     = selectindex(X[2::`n'] :!= X[1::(`n'-1)])
+				starts  = 1 \ (bdy:+1)
+				ends    = (bdy \ `n')
+				lens    = ends :- starts :+ 1
+				dups    = J(`n',1,.)
+				dupsid  = J(`n',1,.)
+				for (j=1; j<=length(lens); j++) {
+					dups[starts[j]::ends[j]]   = J(lens[j],1,lens[j])
+					dupsid[starts[j]::ends[j]] = 1::lens[j]
+				}
+			}
 			}
 			
 	
@@ -312,13 +470,23 @@ program define lprobust, eclass
 		*** Start loop over evaluation points
 		for (c=1; c<=`neval'; c++) {
 	
-			w_h = nprobust_lp_kweight(X,eval[c],h[c],"`kernel'");	
-			w_b = nprobust_lp_kweight(X,eval[c],b[c],"`kernel'");	
-			ind_h = selectindex(w_h:> 0);ind_b = selectindex(w_b:> 0);
+			w_h = nprobust_lp_kweight(X,eval[c],h[c],"`kernel'"):*wts;
+			w_b = nprobust_lp_kweight(X,eval[c],b[c],"`kernel'"):*wts;
+			ind_h = selectindex(w_h:> 0); ind_b = selectindex(w_b:> 0);
 			N_h = length(ind_h);	N_b = length(ind_b)
-			ind = ind_b
-			if (h>b) {
-				ind = ind_h   
+			// Bug fix: union of h- and b-windows so obs only reached by the
+			// larger bandwidth are included for the bias-corrected step.
+			ind = selectindex((w_h:> 0) :| (w_b:> 0))
+
+			if ("`masspoints'"=="check") {
+				n_unique = rows(uniqrows(X[ind_h]))
+				if (n_unique < `p'+5) {
+					st_local("mp_warn_msg", sprintf(                                 ///
+						"Only %f unique x values within bandwidth at eval=%f (p+5=%f); local polynomial may be unreliable. Set masspoints(off) to silence.", ///
+						n_unique, eval[c], `p'+5))
+					displayas("text")
+					printf("{txt}Warning: %s{txt}\n", st_local("mp_warn_msg"))
+				}
 			}
 			eN = length(ind)
 			eY  = Y[ind];
@@ -374,24 +542,55 @@ program define lprobust, eclass
 			if ("`vce_select'"=="hc0" | "`vce_select'"=="hc1" | "`vce_select'"=="hc2" | "`vce_select'"=="hc3") {
 				predicts_p=R_p*beta_p
 				predicts_q=R_q*beta_q
-				if ("`vce_select'"=="hc2" | "`vce_select'"=="hc3") {
-					hii=J(eN,1,.)	
-						for (i=1; i<=eN; i++) {
-							hii[i] = R_p[i,]*invG_p*(R_p:*W_h)[i,]'
-					}
+				if (("`vce_select'"=="hc2" | "`vce_select'"=="hc3") & "`cluster'"=="") {
+					hii = rowsum((R_p*invG_p) :* (R_p:*W_h))
 				}
 			}
-			
-			res_h = nprobust_lp_res(eX, eY, predicts_p, hii, "`vce_select'", `nnmatch', edups, edupsid, `p'+1)
-			if ("`vce_select'"=="nn") {
+
+			if ("`cluster'"=="") {
+				// Standard HC / NN sandwich (meat uses RX = R_p*W_h).
+				res_h = nprobust_lp_res(eX, eY, predicts_p, hii, "`vce_select'", `nnmatch', edups, edupsid, `p'+1)
+				if ("`vce_select'"=="nn") {
 					res_b = res_h
+				}
+				else {
+					res_b = nprobust_lp_res(eX, eY, predicts_q, hii, "`vce_select'", `nnmatch', edups, edupsid, `q'+1)
+				}
+				V_Y_cl = invG_p*nprobust_lp_vce(R_p:*W_h, res_h, eC, indC)*invG_p
+				V_Y_bc = invG_p*nprobust_lp_vce(Q_q,      res_b, eC, indC)*invG_p
 			}
 			else {
-					res_b = nprobust_lp_res(eX, eY, predicts_q, hii, "`vce_select'", `nnmatch', edups, edupsid, `q'+1)				
-			}
+				// Cluster-robust: vce selects the CR variant.
+				//   vce(hc0 clvar) -> CR0     vce(hc1 clvar) -> CR1
+				//   vce(hc2 clvar) -> CR2     vce(hc3 clvar) -> CR3
+				//   vce(cluster/nncluster clvar) -> CR1 (default)
+				cr_type = "CR1"
+				if ("`vce_select'"=="hc0") cr_type = "CR0"
+				if ("`vce_select'"=="hc1") cr_type = "CR1"
+				if ("`vce_select'"=="hc2") cr_type = "CR2"
+				if ("`vce_select'"=="hc3") cr_type = "CR3"
 
-			V_Y_cl = invG_p*nprobust_lp_vce(R_p:*W_h,  res_h, eC, indC)*invG_p
-			V_Y_bc = invG_p*nprobust_lp_vce(Q_q,       res_b, eC, indC)*invG_p
+				if ("`vce_select'"=="nn") {
+					res_h_raw = nprobust_lp_res(eX, eY, predicts_p, hii, "nn", `nnmatch', edups, edupsid, `p'+1)
+					res_b_raw = res_h_raw
+				}
+				else {
+					res_h_raw = eY - predicts_p
+					res_b_raw = eY - predicts_q
+				}
+
+				sqrtW_h = sqrt(W_h)
+				X_std_h = R_p :* sqrtW_h
+				r_std_h = res_h_raw :* sqrtW_h
+
+				// k_override = q+1 aligns CR1 df correction with the q-regression
+				// that produced res_b_raw. Without it, k=cols(Q_q)=p+1 was used.
+				meat_cl = nprobust_lp_cluster_meat(X_std_h, r_std_h, eC, indC, invG_p, cr_type, 0)
+				meat_bc = nprobust_lp_cluster_meat(Q_q,     res_b_raw, eC, indC, invG_p, cr_type, `q'+1)
+
+				V_Y_cl = invG_p * meat_cl * invG_p
+				V_Y_bc = invG_p * meat_bc * invG_p
+			}
 			
 			V_tau_cl = factorial(`deriv')^2*(V_Y_cl)[`deriv'+1,`deriv'+1]
 			V_tau_rb = factorial(`deriv')^2*(V_Y_bc)[`deriv'+1,`deriv'+1]
@@ -420,21 +619,21 @@ program define lprobust, eclass
 	for (i=1; i<=`neval'; i++) {
 			for (j=i; j<=`neval'; j++) {  
     
-		w_h_i = nprobust_lp_kweight(X,eval[i],h[i],"`kernel'");	
-		w_b_i = nprobust_lp_kweight(X,eval[i],b[i],"`kernel'");		
+		w_h_i = nprobust_lp_kweight(X,eval[i],h[i],"`kernel'"):*wts;
+		w_b_i = nprobust_lp_kweight(X,eval[i],b[i],"`kernel'"):*wts;
 		ind_h_i = selectindex(w_h_i:> 0);  ind_b_i = selectindex(w_b_i:> 0)
 		N_h_i   = length(ind_h_i);  N_b_i = length(ind_b_i)
-        ind_i   = ind_b_i
-		if (h[i]>b[i]) ind_i = ind_h_i   
-        
-		w_h_j = nprobust_lp_kweight(X,eval[j],h[j],"`kernel'");	
-		w_b_j = nprobust_lp_kweight(X,eval[j],b[j],"`kernel'");	
-        ind_h_j = selectindex(w_h_j:>0); ind_b_j = selectindex(ind_b_j = w_b_j:>0)
-        N_h_j   = length(ind_h_j);  N_b_j = length(ind_b_j)
-        ind_j   = ind_b_j
-        if (h[j]>b[j]) ind_j = ind_h_j   
-        		
-		ind = uniqrows(ind_i \ind_j)
+		ind_i   = selectindex((w_h_i:> 0) :| (w_b_i:> 0))
+
+		w_h_j = nprobust_lp_kweight(X,eval[j],h[j],"`kernel'"):*wts;
+		w_b_j = nprobust_lp_kweight(X,eval[j],b[j],"`kernel'"):*wts;
+		// Bug fix: previous versions had an inline assignment inside selectindex.
+		ind_h_j = selectindex(w_h_j:>0)
+		ind_b_j = selectindex(w_b_j:>0)
+		N_h_j   = length(ind_h_j);  N_b_j = length(ind_b_j)
+		ind_j   = selectindex((w_h_j:> 0) :| (w_b_j:> 0))
+
+		ind = uniqrows(ind_i \ ind_j)
         *ind = ind_i
 				
         eN  = length(ind)
@@ -482,8 +681,10 @@ program define lprobust, eclass
 		hii_i=predicts_p_i=predicts_q_i=0
 		hii_j=predicts_p_j=predicts_q_j=0
 		if ("`vce_select'"=="hc0" | "`vce_select'"=="hc1" | "`vce_select'"=="hc2" | "`vce_select'"=="hc3") {
-			predicts_p_i = R_p_i*beta_p_i;	predicts_q_j = R_q_i*beta_q_i
-			predicts_p_j = R_p_j*beta_p_j;  predicts_q_j = R_q_j*beta_q_j
+			// Bug fix: previously `predicts_q_j` was assigned twice;
+			// `predicts_q_i` was never set and later read as zero.
+			predicts_p_i = R_p_i*beta_p_i;   predicts_q_i = R_q_i*beta_q_i
+			predicts_p_j = R_p_j*beta_p_j;   predicts_q_j = R_q_j*beta_q_j
 			if ("`vce_select'"=="hc2" | "`vce_select'"=="hc3") {
 				hii_i=hii_j=J(eN,1,.)	
 					for (k=1; k<=eN; k++) {
@@ -503,11 +704,17 @@ program define lprobust, eclass
 			res_b_j = nprobust_lp_res(eX, eY, predicts_q_j, hii_j, "`vce_select'", `nnmatch', edups, edupsid, `q'+1)
          }
 			
-        V_us_i =  factorial(`deriv')^2*invG_p_i*((res_h_i):*(R_p_i:*W_h_i))'
-        V_us_j =  factorial(`deriv')^2*invG_p_j*((res_h_j):*(R_p_j:*W_h_j))'
-        
-        V_rb_i =  factorial(`deriv')^2*invG_p_i*(res_b_i:*Q_q_i)'
-        V_rb_j =  factorial(`deriv')^2*invG_p_j*(res_b_j:*Q_q_j)'
+        // NOTE: V_us_i carries factorial(deriv) (NOT factorial(deriv)^2)
+        // so that cov(tau_i, tau_j) = (V_us_i * V_us_j')[d+1,d+1] picks up
+        // factorial(deriv)^2 from the cross-product -- matching the scaling
+        // of se in the main loop. The previous code had factorial(deriv)^2
+        // here, giving factorial(deriv)^4 after the cross-product (a factor
+        // factorial(deriv)^2 too large for deriv >= 2).
+        V_us_i =  factorial(`deriv')*invG_p_i*((res_h_i):*(R_p_i:*W_h_i))'
+        V_us_j =  factorial(`deriv')*invG_p_j*((res_h_j):*(R_p_j:*W_h_j))'
+
+        V_rb_i =  factorial(`deriv')*invG_p_i*(res_b_i:*Q_q_i)'
+        V_rb_j =  factorial(`deriv')*invG_p_j*(res_b_j:*Q_q_j)'
         
         cov_us[i,j] = (V_us_i*V_us_j')[`deriv'+1,`deriv'+1]
         cov_rb[i,j] = (V_rb_i*V_rb_j')[`deriv'+1,`deriv'+1]
@@ -537,14 +744,14 @@ program define lprobust, eclass
 		(void) 	st_addvar("double", 	invtokens((genvars, "b"), 			"_"))
 				st_store(Result[., 11], invtokens((genvars, "b"), 			"_"), Result[., 3])
 					
-		(void) 	st_addvar("double", 	invtokens((genvars, "nh"), 			"_"))
-				st_store(Result[., 11], invtokens((genvars, "nh"), 			"_"), Result[., 4])
+		(void) 	st_addvar("double", 	invtokens((genvars, "N"), 			"_"))
+				st_store(Result[., 11], invtokens((genvars, "N"), 			"_"), Result[., 4])
 					
-		(void) 	st_addvar("double", 	invtokens((genvars, "gx_us"), 		"_"))
-				st_store(Result[., 11], invtokens((genvars, "gx_us"), 		"_"), Result[., 5])
+		(void) 	st_addvar("double", 	invtokens((genvars, "tau_us"), 		"_"))
+				st_store(Result[., 11], invtokens((genvars, "tau_us"), 		"_"), Result[., 5])
 				
-		(void) 	st_addvar("double", 	invtokens((genvars, "gx_bc"), 		"_"))
-				st_store(Result[., 11], invtokens((genvars, "gx_bc"), 		"_"), Result[., 6])
+		(void) 	st_addvar("double", 	invtokens((genvars, "tau_bc"), 		"_"))
+				st_store(Result[., 11], invtokens((genvars, "tau_bc"), 		"_"), Result[., 6])
 
 		(void) 	st_addvar("double", 	invtokens((genvars, "se_us"), 		"_"))
 				st_store(Result[., 11], invtokens((genvars, "se_us"), 		"_"), Result[., 7])
@@ -562,8 +769,8 @@ program define lprobust, eclass
 		(void) 	st_addvar("double", 	"`plot_eval'")
 				st_store(Result[., 11], "`plot_eval'", Result[., 1])
 				
-		(void) st_addvar("double", 		"`plot_gx_us'")
-				st_store(Result[., 11], "`plot_gx_us'", Result[., 5])
+		(void) st_addvar("double", 		"`plot_tau_us'")
+				st_store(Result[., 11], "`plot_tau_us'", Result[., 5])
 				
 		(void) st_addvar("double", 		"`plot_cil_rb'")
 				st_store(Result[., 11], "`plot_cil_rb'", Result[., 9])
@@ -581,12 +788,12 @@ program define lprobust, eclass
 	if ("`genvars'" != "") {
 		label variable `genvars'_eval 	"lprobust: eval point"
 		label variable `genvars'_h  	"lprobust: bandwidth"
-		label variable `genvars'_nh 	"lprobust: effective sample size"
-		label variable `genvars'_gx_us 	"lprobust: point estimate with pol. order `p'"
+		label variable `genvars'_N 	"lprobust: effective sample size"
+		label variable `genvars'_tau_us 	"lprobust: point estimate with pol. order `p'"
 		label variable `genvars'_se_us 	"lprobust: standard error for f_p"
 		*label variable `genvars'_CI_l_us 	"lprobust: left level-`level' CI, conventional"
 		*label variable `genvars'_CI_r_us 	"lprobust: right level-`level' CI, conventional"
-		label variable `genvars'_gx_bc   	"lprobust: point estimate with pol. order `q'"
+		label variable `genvars'_tau_bc   	"lprobust: point estimate with pol. order `q'"
 		label variable `genvars'_se_rb 	    "lprobust: standard error for f_q"
 		label variable `genvars'_CI_l_rb 	"lprobust: left level-`level' CI, robust bias-corrected"
 		label variable `genvars'_CI_r_rb 	"lprobust: right level-`level' CI, robust bias-corrected"		
@@ -628,7 +835,7 @@ program define lprobust, eclass
 	**** plot
 	if ("`plot'" != "" & "`genvars'" != "") {
 		local plot_eval	    "`genvars'_eval"
-		local plot_gx_us	"`genvars'_gx_us"
+		local plot_tau_us	"`genvars'_tau_us"
 		local plot_cil_rb	"`genvars'_CI_l_rb"
 		local plot_cir_rb 	"`genvars'_CI_r_rb"
 	}
@@ -637,7 +844,7 @@ program define lprobust, eclass
 	if ("`plot'" != "") {
 		if (`"`graph_options'"'=="" ) local graph_options = `"title("lprobust (p=`p', q=`q', deriv=`deriv')", color(gs0)) xtitle("`x'") ytitle("")"'
 		twoway 	(rarea `plot_cil_rb' `plot_cir_rb' `plot_eval', sort color(gs11)) ///
-				(line `plot_gx_us' `plot_eval',  lcolor(black) sort lwidth(medthin) lpattern(solid)),  ///
+				(line `plot_tau_us' `plot_eval',  lcolor(black) sort lwidth(medthin) lpattern(solid)),  ///
 				legend(cols(2) order(2 "point estimate" 1 "`level'% C.I." )) `graph_options'
 	}
 		
@@ -651,12 +858,14 @@ program define lprobust, eclass
 	
 	ereturn local kernel      = "`kernel_type'"
 	ereturn local bwselect   = "`bwselect'"
-	ereturn local vce_select = "`vce_type'"
+	ereturn local vce_select = "`vce_raw'"
+	ereturn local vce_type   = "`vce_type'"
+	if ("`clustvar'"!="") ereturn local clustvar "`clustvar'"
 	ereturn local yvar "`y'"
 	ereturn local xvar "`x'"
 	ereturn local cmd "lprobust"
 	
-	matrix colnames Result = eval h b nh gx_us gx_bc se_us se_rb CI_l_rb CI_r_rb
+	matrix colnames Result = eval h b N tau_us tau_bc se_us se_rb CI_l_rb CI_r_rb
 	ereturn matrix Result = Result
 	if ("`covgrid'" != "") {
 		ereturn matrix cov_us = cov_us

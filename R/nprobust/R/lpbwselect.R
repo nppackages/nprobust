@@ -1,31 +1,77 @@
-lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="epa", 
-                      bwselect="mse-dpi", bwcheck=21, bwregul=1, imsegrid=30, vce="nn", cluster = NULL, 
-                      nnmatch=3, interior=FALSE, subset=NULL){
-  
+lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="epa",
+                      bwselect="mse-dpi", bwcheck=21, bwregul=1, imsegrid=30, vce="nn", cluster = NULL,
+                      nnmatch=3, interior=FALSE, subset=NULL,
+                      weights = NULL, masspoints = "check", data = NULL){
+
+  if (!is.null(data)) {
+    mc <- match.call()
+    caller_env <- parent.frame()
+    .lookup <- function(arg) {
+      expr <- mc[[arg]]
+      if (is.null(expr)) return(NULL)
+      eval(expr, envir = data, enclos = caller_env)
+    }
+    y <- .lookup("y")
+    x <- .lookup("x")
+    if ("cluster" %in% names(mc)) cluster <- .lookup("cluster")
+    if ("weights" %in% names(mc)) weights <- .lookup("weights")
+    if ("subset"  %in% names(mc)) subset  <- .lookup("subset")
+  }
+
   if (!is.null(subset)) {
     x <- x[subset]
     y <- y[subset]
+    if (!is.null(cluster)) cluster <- cluster[subset]
+    if (!is.null(weights)) weights <- weights[subset]
   }
-  
-  na.ok <- complete.cases(x) & complete.cases(y)
-  if (!is.null(cluster)){
-    if (!is.null(subset))  cluster <- cluster[subset]
-    na.ok <- na.ok & complete.cases(cluster)
-  } 
-  
-  x     <- x[na.ok]
-  y     <- y[na.ok]
-  if (!is.null(cluster)) cluster = cluster[na.ok]
 
-  
+  ## UX prechecks: catch invalid bwcheck/imsegrid/weights with clear messages
+  .nperrs <- character()
+  if (!is.null(bwcheck) && (!is.numeric(bwcheck) || length(bwcheck) != 1 || !is.finite(bwcheck) || bwcheck <= 0))
+    .nperrs <- c(.nperrs, "bwcheck must be a single positive finite integer.")
+  if (!is.numeric(imsegrid) || length(imsegrid) != 1 || !is.finite(imsegrid) || imsegrid <= 0)
+    .nperrs <- c(.nperrs, "imsegrid must be a single positive finite integer.")
+  if (!is.null(weights)) {
+    if (!is.numeric(weights))               .nperrs <- c(.nperrs, "weights must be numeric.")
+    if (length(weights) != length(x))       .nperrs <- c(.nperrs, "weights length must equal length(x) (after subset).")
+    if (sum(weights, na.rm = TRUE) <= 0)    .nperrs <- c(.nperrs, "weights must have a strictly positive sum.")
+  }
+  if (length(.nperrs) > 0) {
+    for (.m in .nperrs) warning(.m, call. = FALSE)
+    stop("nprobust: invalid input (see warnings above).", call. = FALSE)
+  }
+
+  na.ok <- complete.cases(x) & complete.cases(y)
+  if (!is.null(cluster)) na.ok <- na.ok & complete.cases(cluster)
+  if (!is.null(weights)) na.ok <- na.ok & complete.cases(weights) & weights >= 0
+
+  x <- x[na.ok]
+  y <- y[na.ok]
+  if (!is.null(cluster)) cluster <- cluster[na.ok]
+  if (!is.null(weights)) weights <- weights[na.ok]
+  if (is.null(weights))  weights <- rep(1, length(x))
+
+  if (!(masspoints %in% c("check", "off"))) {
+    stop("masspoints must be one of \"check\" or \"off\".")
+  }
+
+
   x.max <- max(x); x.min <- min(x)
   N <- length(x)
-  
+
+  if (!is.null(bwcheck)) {
+    if (bwcheck > N) {
+      warning("bwcheck (", bwcheck, ") is larger than the sample size (", N,
+              "); reducing bwcheck to N.")
+      bwcheck <- N
+    }
+  }
+
   if (!is.null(deriv) & is.null(p)) p <- deriv+1
   if (is.null(p))         p <- 1
   if (is.null(deriv)) deriv <- 0
   q <- p+1
-  
+
   if (is.null(eval)) {
     if (is.null(neval)) {
       #eval <- unique(x)
@@ -43,22 +89,61 @@ lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="e
   neval <- length(eval)
 
   if  (bwselect=="imse-dpi" | bwselect=="imse-rot") neval =  eval = 1
-  
+
   even <- (p-deriv)%%2==0
-  
+
   kernel   <- tolower(kernel)
   bwselect <- tolower(bwselect)
   vce      <- tolower(vce)
-  
+
+  # Validate vce against the allowed set; mirror lprobust() so that direct
+  # calls to lpbwselect() get the same UX as the bw selector invoked from
+  # inside lprobust().
+  valid_vce <- c("nn", "hc0", "hc1", "hc2", "hc3", "cr1", "cr2", "cr3", "")
+  if (!(vce %in% valid_vce))
+    stop(sprintf("vce incorrectly specified (received '%s'); allowed: nn, hc0, hc1, hc2, hc3, cr1, cr2, cr3.", vce), call. = FALSE)
+
+  # Cluster vce normalization: with cluster, only cr1/cr2/cr3 are valid;
+  # without cluster, cr1/cr2/cr3 fall back to hc1/hc2/hc3. Internal helpers
+  # only know about nn/hc0/hc1/hc2/hc3, so cr* gets remapped to hc*.
+  if (!is.null(cluster)) {
+    if (vce %in% c("nn", "")) {
+      vce <- "cr1"  # silent default
+    } else if (vce %in% c("hc0", "hc1")) {
+      warning(paste0("vce='", vce, "' is not a cluster option. Switching to vce='cr1'."), call. = FALSE)
+      vce <- "cr1"
+    } else if (vce == "hc2") {
+      warning("vce='hc2' is not a cluster option. Switching to vce='cr2'.", call. = FALSE)
+      vce <- "cr2"
+    } else if (vce == "hc3") {
+      warning("vce='hc3' is not a cluster option. Switching to vce='cr3'.", call. = FALSE)
+      vce <- "cr3"
+    }
+  } else {
+    if (vce == "cr1") {
+      warning("vce='cr1' requires a cluster variable. Falling back to vce='hc1'.", call. = FALSE)
+      vce <- "hc1"
+    } else if (vce == "cr2") {
+      warning("vce='cr2' requires a cluster variable. Falling back to vce='hc2'.", call. = FALSE)
+      vce <- "hc2"
+    } else if (vce == "cr3") {
+      warning("vce='cr3' requires a cluster variable. Falling back to vce='hc3'.", call. = FALSE)
+      vce <- "hc3"
+    }
+  }
+  if (vce == "cr1") vce <- "hc1"
+  if (vce == "cr2") vce <- "hc2"
+  if (vce == "cr3") vce <- "hc3"
+
   kernel.type <- "Epanechnikov"
   if (kernel=="triangular"   | kernel=="tri") kernel.type <- "Triangular"
   if (kernel=="uniform"      | kernel=="uni") kernel.type <- "Uniform"
   if (kernel=="gaussian"     | kernel=="gau") kernel.type <- "Gaussian"
-    
+
   bws           <- matrix(NA,neval,2)
   colnames(bws) <- c("h","b")
-  bws.imse      <- NULL  
-  
+  bws.imse      <- NULL
+
   if (bwselect=="all") {
     bws           <- matrix(NA,neval,8)
     colnames(bws) <- c("h.mse.dpi","b.mse.dpi", "h.mse.rot","b.mse.rot", "h.ce.dpi","b.ce.dpi", "h.ce.rot","b.ce.rot")
@@ -66,12 +151,16 @@ lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="e
   }
 
   if  (bwselect=="imse-dpi" | bwselect=="all") {
-      est <- lpbwselect.imse.dpi(y=y, x=x, cluster=cluster,               p=p, q=q, deriv=deriv, kernel=kernel, bwcheck=bwcheck, bwregul=bwregul, imsegrid=imsegrid, vce=vce, nnmatch=nnmatch, interior=interior)
+      est <- lpbwselect.imse.dpi(y=y, x=x, cluster=cluster, weights=weights,
+                                 p=p, q=q, deriv=deriv, kernel=kernel,
+                                 bwcheck=bwcheck, bwregul=bwregul,
+                                 imsegrid=imsegrid, vce=vce,
+                                 nnmatch=nnmatch, interior=interior)
       h.imse.dpi   <- est$h
       b.imse.dpi   <- est$b
       bws[1,1:2]   <- c(h.imse.dpi,  b.imse.dpi)
   }
-    
+
   if  (bwselect=="imse-rot" | bwselect=="all") {
       est <- lpbwselect.imse.rot(y=y, x=x, p=p, deriv=deriv, kernel=kernel, imsegrid=imsegrid)
       h.imse.rot   <- est$h
@@ -79,19 +168,22 @@ lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="e
       b.imse.rot   <- est$h
       bws[1,1:2]   <- c(h.imse.rot,  b.imse.rot)
   }
-    
+
   if  (bwselect=="all") {
     bws.imse[,1] <- c(h.imse.dpi,  b.imse.dpi)
     bws.imse[,2] <- c(h.imse.rot,  b.imse.rot)
   }
-  
+
   if  (bwselect=="all"  | bwselect=="mse-dpi" | bwselect=="mse-rot" | bwselect=="ce-dpi" | bwselect=="ce-rot") {
-   
+
      for (i in 1:neval) {
-     
+
       if  (bwselect=="mse-dpi" | bwselect=="ce-dpi" | bwselect=="ce-rot" | bwselect=="all") {
-        est <- lpbwselect.mse.dpi(y=y, x=x, cluster=cluster, eval=eval[i], p=p, q=q, deriv=deriv, kernel=kernel, 
-                                bwcheck=bwcheck, bwregul=bwregul, vce=vce, nnmatch=nnmatch, interior=interior)
+        est <- lpbwselect.mse.dpi(y=y, x=x, cluster=cluster, weights=weights,
+                                  eval=eval[i], p=p, q=q, deriv=deriv,
+                                  kernel=kernel, bwcheck=bwcheck,
+                                  bwregul=bwregul, vce=vce, nnmatch=nnmatch,
+                                  interior=interior)
         h.mse.dpi  <- est$h
         b.mse.dpi  <- est$b
         bws[i,1:2] <- c(h.mse.dpi,  b.mse.dpi)
@@ -104,29 +196,32 @@ lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="e
         b.mse.rot  <- est$h
         bws[i,1:2] <- c(h.mse.rot,  b.mse.rot)
       }
-      
+
       h.ce.dpi=b.ce.dpi=h.ce.rot=b.ce.rot=0
-      
+
       if  (bwselect=="ce-dpi" | bwselect=="all") {
         h.ce.dpi=b.ce.dpi=0
         #if (deriv==0) {
-          if  (even==TRUE ) { 
+          if  (isTRUE(even) ) {
             h.ce.dpi <- h.mse.dpi*N^(-((p+2)/((2*p+5)*(p+3))))
             b.ce.dpi <- b.mse.dpi*N^(-((q)/((2*q+3)*(q+3))))
           } else{
-            est <- lpbwselect.ce.dpi(y=y, x=x, h=h.mse.dpi, b=b.mse.dpi, eval=eval[i], p=p, q=q, deriv=deriv, rho=1, 
-                                   kernel=kernel, vce=vce, nnmatch=nnmatch, interior=interior, bwregul=bwregul)
+            est <- lpbwselect.ce.dpi(y=y, x=x, h=h.mse.dpi, b=b.mse.dpi,
+                                     eval=eval[i], p=p, q=q, deriv=deriv,
+                                     rho=1, kernel=kernel, vce=vce,
+                                     nnmatch=nnmatch, interior=interior,
+                                     bwregul=bwregul, weights=weights)
             h.ce.dpi <- est$h
             b.ce.dpi <- b.mse.dpi*N^(-((q+2)/((2*q+5)*(q+3))))
           }
             bws[i,1:2] <- c(h.ce.dpi,  b.ce.dpi)
         #}
       }
-      
+
       if  (bwselect=="ce-rot" | bwselect=="all") {
         h.ce.rot=b.ce.rot=0
         #if (deriv==0) {
-          if  (even==TRUE ) { 
+          if  (isTRUE(even) ) {
             h.ce.rot <- h.mse.dpi*N^(-((p+2)/((2*p+5)*(p+3))))
             b.ce.rot <- b.mse.dpi*N^(-((q)/((2*q+3)*(q+3))))
           } else{
@@ -136,11 +231,11 @@ lpbwselect = function(y, x, eval=NULL, neval=NULL, p=NULL, deriv=NULL, kernel="e
           bws[i,1:2]  <- c(h.ce.rot,  b.ce.rot)
       #}
       }
-    
+
       if (bwselect=="all") bws[i,] <- c(h.mse.dpi,b.mse.dpi, h.mse.rot,b.mse.rot,  h.ce.dpi,b.ce.dpi, h.ce.rot,b.ce.rot)
     }
   }
-  
+
   bws <- cbind(eval, bws)
   out        <- list(bws = bws, bws.imse = bws.imse,
                      opt = list(n=N, neval=neval, p=p, q=q, deriv=deriv, kernel=kernel.type, bwselect=bwselect))
@@ -159,16 +254,22 @@ print.lpbwselect <- function(x,...){
   cat(paste("Kernel function                              =    ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth method                             =    ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
-  #cat("Use summary(...) to show bandwidths.\n")
+
+  invisible(x)
 }
 
-summary.lpbwselect <- function(object,...) {
-  x <- object
-  args <- list(...)
-  if (is.null(args[['sep']]))   { sep <- 5 } else { sep <- args[['sep']] }
-  
+summary.lpbwselect <- function(object, sep = 5, ...) {
+  out <- list(opt      = object$opt,
+              bws      = object$bws,
+              bws.imse = object$bws.imse,
+              sep      = sep)
+  class(out) <- "summary.lpbwselect"
+  out
+}
+
+print.summary.lpbwselect <- function(x, ...) {
   cat("Call: lpbwselect\n\n")
-  
+
   cat(paste("Sample size (n)                              =    ", x$opt$n,        "\n", sep=""))
   cat(paste("Polynomial order for point estimation (p)    =    ", x$opt$p,        "\n", sep=""))
   cat(paste("Order of derivative estimated (deriv)        =    ", x$opt$deriv,    "\n", sep=""))
@@ -176,7 +277,9 @@ summary.lpbwselect <- function(object,...) {
   cat(paste("Kernel function                              =    ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth method                             =    ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
-  
+
+  sep <- x$sep
+
   if (x$opt$bwselect=="all") {
     col1.names = c("","", "MSE-DPI","", "MSE-ROT", "","CE-DPI", "","CE-ROT")
     col2.names = rep(c("h", "b"),4)
@@ -198,13 +301,13 @@ summary.lpbwselect <- function(object,...) {
   if (x$opt$bwselect!="imse-dpi" & x$opt$bwselect!="imse-rot") cat(format("eval", width=10, justify="right"))
   cat(format(col2.names            , width=8, justify="right"))
   cat("\n")
-  
+
   if (x$opt$bwselect=="imse-dpi" | x$opt$bwselect=="imse-rot") {
     cat(paste(rep("=", 15 + 8), collapse="")); cat("\n")
   } else {
     cat(paste(rep("=", 15 + 8*ncol(x$bws)), collapse="")); cat("\n")
   }
-  
+
   if (x$opt$bwselect=="imse-dpi" | x$opt$bwselect=="imse-rot") {
     cat(format(sprintf("%3.3f", x$bws[2:3])  , width=9, justify="right"))
     cat("\n")
@@ -219,13 +322,13 @@ summary.lpbwselect <- function(object,...) {
       }
     }
   }
-  
+
   if (x$opt$bwselect=="imse-dpi" | x$opt$bwselect=="imse-rot") {
     cat(paste(rep("=", 15 + 8), collapse="")); cat("\n")
   } else {
-    cat(paste(rep("=", 15 + 8*ncol(x$bws)), collapse="")); cat("\n")   
+    cat(paste(rep("=", 15 + 8*ncol(x$bws)), collapse="")); cat("\n")
   }
-  
+
   if (x$opt$bwselect=="all") {
     cat("\n")
     cat(paste(rep("=", 15 + 10 + 10), collapse="")); cat("\n")
@@ -239,6 +342,6 @@ summary.lpbwselect <- function(object,...) {
     cat(paste(rep("=", 15 + 10 + 10), collapse="")); cat("\n")
     cat("\n")
   }
-  
-  
+
+  invisible(x)
 }

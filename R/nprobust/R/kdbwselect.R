@@ -1,17 +1,62 @@
-kdbwselect <- function(x, eval=NULL, neval=NULL, kernel="epa", 
-                       bwselect="mse-dpi", bwcheck=21, imsegrid=30, subset = NULL){
-  
+kdbwselect <- function(x, eval=NULL, neval=NULL, kernel="epa",
+                       bwselect="mse-dpi", bwcheck=21, imsegrid=30, subset = NULL,
+                       data = NULL){
+
+  if (!is.null(data)) {
+    mc <- match.call()
+    caller_env <- parent.frame()
+    .lookup <- function(arg) {
+      expr <- mc[[arg]]
+      if (is.null(expr)) return(NULL)
+      eval(expr, envir = data, enclos = caller_env)
+    }
+    x <- .lookup("x")
+    if ("subset" %in% names(mc)) subset <- .lookup("subset")
+  }
+
   p <- 2
   deriv <- 0
   kernel   <- tolower(kernel)
   bwselect <- tolower(bwselect)
-  
+
+  if (!(kernel %in% c("epa","epanechnikov","uni","uniform"))) {
+    stop("kernel incorrectly specified. Supported kernels for kdbwselect: epa, uni.")
+  }
+  if (kernel %in% c("epanechnikov")) kernel <- "epa"
+  if (kernel %in% c("uniform"))      kernel <- "uni"
+
   if (!is.null(subset)) x <- x[subset]
-  na.ok <- complete.cases(x) 
+
+  ## UX prechecks: catch invalid bwcheck/imsegrid with clear messages
+  .nperrs <- character()
+  if (!is.null(bwcheck) && (!is.numeric(bwcheck) || length(bwcheck) != 1 || !is.finite(bwcheck) || bwcheck <= 0))
+    .nperrs <- c(.nperrs, "bwcheck must be a single positive finite integer.")
+  if (!is.numeric(imsegrid) || length(imsegrid) != 1 || !is.finite(imsegrid) || imsegrid <= 0)
+    .nperrs <- c(.nperrs, "imsegrid must be a single positive finite integer.")
+  if (!is.null(eval)) {
+    if (!is.numeric(eval) || any(!is.finite(eval)))
+      .nperrs <- c(.nperrs, "eval must be numeric and finite.")
+    if (length(eval) == 0L)
+      .nperrs <- c(.nperrs, "eval must have at least one element.")
+  }
+  if (length(.nperrs) > 0) {
+    for (.m in .nperrs) warning(.m, call. = FALSE)
+    stop("nprobust: invalid input (see warnings above).", call. = FALSE)
+  }
+
+  na.ok <- complete.cases(x)
   x <- x[na.ok]
 
   x.min <- min(x);  x.max <- max(x)
   N <- length(x)
+
+  if (!is.null(bwcheck)) {
+    if (bwcheck > N) {
+      warning("bwcheck (", bwcheck, ") is larger than the sample size (", N,
+              "); reducing bwcheck to N.")
+      bwcheck <- N
+    }
+  }
 
   if (is.null(eval)) {
     if (is.null(neval)) {
@@ -34,18 +79,14 @@ kdbwselect <- function(x, eval=NULL, neval=NULL, kernel="epa",
   neval <- length(eval)
 
 
-  kernel.type <- "Gaussian"  
-  C.h<-1.06
-  C.b<-1
   if (kernel=="epa") {
     kernel.type <- "Epanechnikov"
-    C.h<-2.34
-    C.b<-3.49
-  }
-  if (kernel=="uni") {
+    C.h <- 2.34
+    C.b <- 3.49
+  } else {
     kernel.type <- "Uniform"
-    C.h<-1.06
-    C.b<-1
+    C.h <- 1.06
+    C.b <- 1
   }
   
   #C.fun <- function(v,r) {
@@ -209,28 +250,35 @@ kdbwselect <- function(x, eval=NULL, neval=NULL, kernel="epa",
 
 print.kdbwselect <- function(x,...){
   cat("Call: kdbwselect\n\n")
-  
+
   cat(paste("Sample size (n)                         =    ", x$opt$n,        "\n", sep=""))
 #  cat(paste("Kernel order for point estimation (p)   =    ", x$opt$p,        "\n", sep=""))
   cat(paste("Kernel function                         =    ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth method                        =    ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
-  
-  #cat("Use summary(...) to show bandwidths.\n")
+
+  invisible(x)
 }
 
-summary.kdbwselect <- function(object,...) {
-  x <- object
-  args <- list(...)
-  if (is.null(args[['sep']]))   { sep <- 5 } else { sep <- args[['sep']] }
-  
+summary.kdbwselect <- function(object, sep = 5, ...) {
+  out <- list(opt      = object$opt,
+              bws      = object$bws,
+              bws.imse = object$bws.imse,
+              sep      = sep)
+  class(out) <- "summary.kdbwselect"
+  out
+}
+
+print.summary.kdbwselect <- function(x, ...) {
   cat("Call: kdbwselect\n\n")
-  
+
   cat(paste("Sample size (n)                             =    ", x$opt$n,        "\n", sep=""))
 #  cat(paste("Polynomial order for point estimation (p)   =    ", x$opt$p,        "\n", sep=""))
   cat(paste("Kernel function                             =    ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth selection method                  =    ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
+
+  sep <- x$sep
 
   if (x$opt$bwselect=="all") {
     col1.names = c("","", "MSE-DPI", "","CE-DPI","","CE-ROT")
@@ -294,5 +342,6 @@ summary.kdbwselect <- function(object,...) {
     cat(paste(rep("=", 15 + 10 + 10), collapse="")); cat("\n")
     cat("\n")
   }
-  
+
+  invisible(x)
 }

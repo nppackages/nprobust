@@ -1,4 +1,0 @@
-gen tar.gz:      R CMD build nprobust 
-check:           R CMD check nprobust_0.5.0.tar.gz --as-cran
-pdf manual:      R CMD Rd2pdf nprobust
-gen zip file:    Rcmd INSTALL --build nprobust

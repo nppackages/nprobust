@@ -6,7 +6,7 @@
 
 Companion commands: \code{\link{lprobust}} for local polynomial point estimation and inference procedures, and \code{\link{kdrobust}} for kernel density point estimation and inference procedures.
 
-For more details, and related Stata and R packages useful for empirical analysis, visit \url{https://nppackages.github.io/}.
+For more details and related software useful for empirical analysis, visit \url{https://nppackages.github.io/}.
 }
 \usage{
 nprobust.plot(..., alpha = NULL, type = NULL, CItype = NULL,
@@ -80,7 +80,7 @@ accordingly.}
 A standard \code{\link[ggplot2]{ggplot2}} object is returned, hence can be used for further customization.
 }
 \details{
-Companion command: \code{\link{lprobust}} for local polynomial-based regression functions and derivatives estimation.
+Companion commands: \code{\link{lprobust}} for local polynomial point estimation and inference, and \code{\link{kdrobust}} for kernel density point estimation and inference.
 }
 \examples{
 x   <- runif(500) 
@@ -89,7 +89,7 @@ est <- lprobust(y,x)
 nprobust.plot(est)
 }
 \references{
-Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2019. \href{https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JSS.pdf}{nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference}. Journal of Statistical Software, 91(8): 1-33. \doi{http://dx.doi.org/10.18637/jss.v091.i08}.
+Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2019. \href{https://nppackages.github.io/references/Calonico-Cattaneo-Farrell_2019_JSS.pdf}{nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference}. Journal of Statistical Software, 91(8): 1-33. \doi{10.18637/jss.v091.i08}.
 }
 \seealso{
 \code{\link{lprobust}}, \code{\link{kdrobust}}, \code{\link[ggplot2]{ggplot2}}
@@ -97,7 +97,7 @@ Calonico, S., M. D. Cattaneo, and M. H. Farrell. 2019. \href{https://nppackages.
 \author{
 Sebastian Calonico, University of California, Davis, CA.  \email{scalonico@ucdavis.edu}.
 
-Matias D. Cattaneo, Princeton University, Princeton, NJ.  \email{cattaneo@princeton.edu}.
+Matias D. Cattaneo, Princeton University, Princeton, NJ.  \email{matias.d.cattaneo@gmail.com}.
 
-Max H. Farrell, University of California, Santa Barbara, CA. \email{maxhfarrell@ucsb.edu}.
+Max H. Farrell, University of California, Santa Barbara, CA. \email{mhfarrell@gmail.com}.
 }

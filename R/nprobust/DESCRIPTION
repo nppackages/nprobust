@@ -1,8 +1,8 @@
 Package: nprobust
 Type: Package
-Title: Nonparametric Robust Estimation and Inference Methods using Local Polynomial Regression and Kernel Density Estimation
-Version: 0.5.0
-Date: 2025-04-12
+Title: Kernel Density and Local Polynomial Regression Methods
+Version: 1.0.0
+Date: 2026-05-17
 Authors@R: c(person(given = c("Sebastian"),
                       family = "Calonico",
                       role = c("aut", "cre"),
@@ -10,15 +10,22 @@ Authors@R: c(person(given = c("Sebastian"),
                person(given = c("Matias", "D."),
                       family = "Cattaneo",
                       role = "aut",
-                      email = "cattaneo@princeton.edu"),
+                      email = "matias.d.cattaneo@gmail.com"),
                person(given = c("Max", "H."),
                       family = "Farrell",
                       role = "aut",
-                      email = "maxhfarrell@ucsb.edu"))
-Description: Tools for data-driven statistical analysis using local polynomial regression and kernel density estimation methods as described in Calonico, Cattaneo and Farrell (2018, <doi:10.1080/01621459.2017.1285776>): 'lprobust()' for local polynomial point estimation and robust bias-corrected inference, 'lpbwselect()' for local polynomial bandwidth selection, 'kdrobust()' for kernel density point estimation and robust bias-corrected inference, 'kdbwselect()' for kernel density bandwidth selection, and 'nprobust.plot()' for plotting results. The main methodological and numerical features of this package are described in Calonico, Cattaneo and Farrell (2019, <doi:10.18637/jss.v091.i08>).
-Depends: R (>= 3.1.1)
-License: GPL-2
-Imports: Rcpp, ggplot2
-LinkingTo: Rcpp, RcppArmadillo
-Packaged: 2025-04-12 9:12:18 UTC; Sebastian
+                      email = "mhfarrell@gmail.com"))
+Author: Sebastian Calonico [aut, cre],
+  Matias D. Cattaneo [aut],
+  Max H. Farrell [aut]
+Maintainer: Sebastian Calonico <scalonico@ucdavis.edu>
+Description: Estimation, inference, bandwidth selection, and graphical procedures for kernel density and local polynomial regression methods, including robust bias-corrected confidence intervals as described in Calonico, Cattaneo and Farrell (2018, <doi:10.1080/01621459.2017.1285776>). The package includes 'lprobust()' for local polynomial point estimation and robust bias-corrected inference, 'lpbwselect()' for local polynomial bandwidth selection, 'kdrobust()' for kernel density point estimation and robust bias-corrected inference, 'kdbwselect()' for kernel density bandwidth selection, and 'nprobust.plot()' for plotting results. The main methodological and numerical features are described in Calonico, Cattaneo and Farrell (2019, <doi:10.18637/jss.v091.i08>).
+Encoding: UTF-8
+Depends: R (>= 3.6.0)
+License: GPL-3
+URL: https://github.com/nppackages/nprobust
+BugReports: https://github.com/nppackages/nprobust/issues
+Imports: ggplot2
+Suggests: testthat (>= 3.0.0), broom, sandwich
+Config/testthat/edition: 3
 

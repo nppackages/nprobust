@@ -1,3 +1,218 @@
+lpbwce = function(y, x, K, L, res, c, p, q, h, b, deriv, fact) {
+  # Pure-R port of the coverage-error DPI helper (formerly Rcpp/Armadillo).
+  # Computes the three leading terms q1rbc, q2rbc, q3rbc of the Edgeworth
+  # expansion used by lpbwselect.ce.dpi. Equivalent up to machine precision
+  # to the original lpbwce.cpp implementation.
+
+  ## Accept y/x/K/L/res as vector or 1-column matrix
+  y   <- as.numeric(y)
+  x   <- as.numeric(x)
+  K   <- as.numeric(K)
+  L   <- as.numeric(L)
+  res <- as.numeric(res)
+
+  N   <- length(y)
+  rho <- h / b
+
+  Xh <- (x - c) / h
+  Xb <- (x - c) / b
+
+  Rp <- outer(Xh, 0:p, `^`)
+  Rq <- outer(Xb, 0:q, `^`)
+  Wp <- K / h
+  Wq <- L / b
+
+  Lp1 <- crossprod(Rp, Wp * Xh^(p + 1)) / N
+  Gp  <- crossprod(Rp * Wp, Rp) / N
+  Gq  <- crossprod(Rq * Wq, Rq) / N
+  iGp <- solve(Gp)
+  iGq <- solve(Gq)
+
+  ep1 <- numeric(q + 1); ep1[p + 2]    <- 1
+  e0  <- numeric(p + 1); e0[deriv + 1] <- fact
+
+  lus0     <- as.numeric((t(e0) %*% iGp) %*% t(Rp * K))
+  scale_bc <- as.numeric((t(e0) %*% iGp) %*% Lp1)
+  tail_bc  <- as.numeric((t(ep1) %*% iGq) %*% t(Rq * L))
+  lbc0 <- lus0 - rho^(p + 1) * scale_bc * tail_bc
+
+  vx <- res^2
+  s2 <- sum(lbc0^2 * vx) / (N * h)
+
+  Krrp   <- crossprod(Rp * K, Rp)
+  Lrrq   <- crossprod(Rq * L, Rq)
+  Krxip  <- crossprod(Rp, K * Xh^(p + 1))
+  sumKRp <- crossprod(Rp, K)
+  Sxp1   <- sum(Xh^(p + 1))
+  Krxp   <- as.numeric(sumKRp) * Sxp1 - as.numeric(Krxip)
+
+  EKrrp      <- Krrp / N
+  EKrxip_vec <- as.numeric(Krxip) / N
+  EKrxp_vec  <- Krxp / (N * (N - 1))
+  ELrrq      <- Lrrq / N
+
+  a_row <- matrix(fact * iGp[deriv + 1, ], 1, p + 1)
+  u_a   <- drop(a_row)
+  v_a   <- drop(a_row %*% EKrrp %*% iGp)
+
+  RpiGp  <- Rp %*% iGp
+  RqiGq  <- Rq %*% iGq
+  quadRp <- rowSums(RpiGp * Rp)
+  quadRq <- rowSums(RqiGq * Rq)
+
+  Rp_va <- as.numeric(Rp %*% v_a)
+  Rp_ua <- as.numeric(Rp %*% u_a)
+
+  ## Single-index sums (vectorized)
+  q1  <- sum(lbc0^3 * res^3)
+  q3  <- sum(lbc0^4 * (res^4 - vx^2))
+  q3a <- q1
+  q8  <- sum((lbc0 * res)^4)
+  q9  <- sum((lbc0^2 * vx - h * s2) * (lbc0 * res)^2)
+  q12 <- sum((lbc0^2 * vx - h * s2)^2)
+  q4  <- sum(lbc0^2 * L * quadRq * res^2)
+
+  q5a <- matrix(colSums((lbc0^3 * res^2) * RqiGq), 1)
+  q5b <- matrix(colSums((lbc0 * res^2 * L) * Rq), q + 1, 1)
+  q7a <- matrix(colSums((lbc0 * res^2 * L) * RqiGq), 1)
+  q7b <- crossprod(Rq * lbc0, Rq * lbc0) %*% iGq
+  q7c <- matrix(colSums((lbc0 * res^2 * L) * Rq), q + 1, 1)
+
+  ## lbc1 at (i,i) for q2
+  lus1_diag <- K * Rp_va - K^2 * Rp_ua * quadRp
+
+  C1_scalar <- drop(a_row %*% EKrrp %*% iGp %*% Lp1)
+  v_iGq_ep1 <- drop(iGq %*% ep1)
+  C2_vec    <- as.numeric(Rq %*% v_iGq_ep1)
+  v_lp      <- drop(iGp %*% Lp1)
+  D2_vec    <- as.numeric(Rp %*% v_lp)
+
+  T1_diag <- L * C2_vec * (C1_scalar - K * Rp_ua * D2_vec)
+
+  dot_a_krxip <- sum(u_a * EKrxip_vec)
+  T2_diag <- L * C2_vec * (K * Xh^(p + 1) * Rp_ua - dot_a_krxip)
+
+  a_Lp1 <- drop(a_row %*% Lp1)
+  u_T3  <- a_Lp1 * as.numeric(t(ep1) %*% iGq)
+  u_T3_ELrrq_iGq <- drop(u_T3 %*% ELrrq %*% iGq)
+  Rq_uT3         <- as.numeric(Rq %*% u_T3)
+  Rq_uT3_ELrrq   <- as.numeric(Rq %*% u_T3_ELrrq_iGq)
+
+  T3_diag <- L * Rq_uT3_ELrrq - L^2 * Rq_uT3 * quadRq
+
+  lbc1_diag <- lus1_diag - rho^(p + 1) * (T1_diag + T2_diag + T3_diag)
+  q2 <- sum(lbc1_diag * lbc0 * res^2)
+
+  ## Double-sum terms for (i != j): closed-form k x k contractions.
+  ## Equivalent to the original N x N construction but uses only O(N*k + k^2)
+  ## memory. Validated to machine precision against the matrix form.
+  ##
+  ## lbc1_mat[i,j] decomposes (each row vector below is a length-N quantity):
+  ##   = alpha[i]                                          # A_mat
+  ##   - K[i] * gamma[j] * M_iGp[i,j]                      # B_mat
+  ##   - rho^(p+1) * delta[i] * (C1_scalar - epsilon[j])   # T1_mat
+  ##   - rho^(p+1) * delta[i] * (Xhpp1[i]*gamma[j] - dot_a_krxp) # T2_mat
+  ##   - rho^(p+1) * (zeta[i] - L[i]*eta[j]*M_iGq[i,j])    # T3_mat
+  ## with M_iGp = Rp iGp Rp', M_iGq = Rq iGq Rq'.
+  dot_a_krxp <- sum(u_a * EKrxp_vec)
+  Xhpp1      <- Xh^(p + 1)
+  ressq      <- vx                       # res^2
+
+  alpha   <- K * Rp_va
+  gamma   <- K * Rp_ua
+  delta   <- L * C2_vec
+  epsilon <- K * Rp_ua * D2_vec
+  zeta    <- L * Rq_uT3_ELrrq
+  eta_v   <- L * Rq_uT3
+
+  ## ---- q6: sum_{i!=j} lbc0[i]^2 * L[j]^2 * res[j]^2 * M_iGq[i,j]^2 ----
+  ## Identity: sum_{i,j} a[i] b[j] (Rq[i,] iGq Rq[j,]')^2
+  ##         = trace( A_a iGq A_b iGq ),
+  ##   where A_w = Rq^T diag(w) Rq.
+  a_q6  <- lbc0^2
+  b_q6  <- (L^2) * ressq
+  A_q6  <- crossprod(Rq, a_q6 * Rq)
+  B_q6  <- crossprod(Rq, b_q6 * Rq)
+  total_q6 <- sum(A_q6 * (iGq %*% B_q6 %*% iGq))
+  diag_q6  <- sum(a_q6 * b_q6 * quadRq^2)
+  q6 <- total_q6 - diag_q6
+
+  ## ---- q10, q11: sum_{i!=j} lbc1_mat[i,j] * f[i] * g[j] ----
+  .lbc1_offdiag <- function(f, g) {
+    sum_g   <- sum(g)
+    sum_df  <- sum(delta * f)
+    fg      <- f * g
+    sum_dfg <- sum(delta * fg)
+
+    # A_mat
+    St_A <- sum(alpha * f) * sum_g
+    Sd_A <- sum(alpha * fg)
+    # B_mat
+    uB   <- crossprod(Rp, K * f)
+    vB   <- crossprod(Rp, gamma * g)
+    St_B <- drop(t(uB) %*% iGp %*% vB)
+    Sd_B <- sum(K * gamma * quadRp * fg)
+    # T1_mat
+    St_T1 <- C1_scalar * sum_df * sum_g - sum_df * sum(epsilon * g)
+    Sd_T1 <- sum(delta * fg * (C1_scalar - epsilon))
+    # T2_mat
+    St_T2 <- sum(delta * Xhpp1 * f) * sum(gamma * g) - dot_a_krxp * sum_df * sum_g
+    Sd_T2 <- sum(delta * Xhpp1 * gamma * fg) - dot_a_krxp * sum_dfg
+    # T3_mat
+    uT3   <- crossprod(Rq, L * f)
+    vT3   <- crossprod(Rq, eta_v * g)
+    St_T3 <- sum(zeta * f) * sum_g - drop(t(uT3) %*% iGq %*% vT3)
+    Sd_T3 <- sum(zeta * fg) - sum(L * eta_v * quadRq * fg)
+
+    St <- St_A - St_B - rho^(p + 1) * (St_T1 + St_T2 + St_T3)
+    Sd <- Sd_A - Sd_B - rho^(p + 1) * (Sd_T1 + Sd_T2 + Sd_T3)
+    St - Sd
+  }
+
+  q10 <- .lbc1_offdiag(lbc0 * ressq, lbc0^2 * ressq)
+  q11 <- .lbc1_offdiag(lbc0 * ressq, lbc0^2 * ressq - h * s2)
+
+  ## Expectations
+  Eq1  <- (q1 / (N * h))^2
+  Eq2  <- q2 / (N * h)
+  Eq3  <- q3 / (N * h)
+  Eq4  <- q4 / (N * h)
+  Eq5  <- drop(q5a %*% q5b) / (N * h)^2
+  Eq6  <- q6 / (N * (N - 1) * h^2)
+  Eq7  <- drop(q7a %*% q7b %*% q7c) / (N * h)^3
+  Eq8  <- q8 / (N * h)
+  Eq9  <- q9 / (N * h)
+  Eq10 <- q10 / (N * (N - 1) * h^2)
+  Eq11 <- q11 / (N * (N - 1) * h^2)
+  Eq12 <- q12 / (N * h)
+
+  z  <- 1.959964
+  pz <- 0.05844507
+
+  q1bc <- pz * (
+      Eq1  * (z^3 / 3 + 7 * z / 4 + s2 * z * (z^2 - 3) / 4) / s2^3
+    + Eq2  * (-z * (z^2 - 3) / 2) / s2
+    + Eq3  * (z * (z^2 - 3) / 8)  / s2^2
+    - Eq4  * (z * (z^2 - 1) / 2)  / s2
+    - Eq5  * (z * (z^2 - 1))      / s2^2
+    + Eq6  * (z * (z^2 - 1) / 4)  / s2
+    + Eq7  * (z * (z^2 - 1) / 2)  / s2^2
+    + Eq8  * (-z * (z^2 - 3) / 24)/ s2^2
+    + Eq9  * (z * (z^2 - 1) / 4)  / s2^2
+    + Eq10 * (z * (z^2 - 3))      / s2^2
+    + Eq11 * (-z)                 / s2^2
+    + Eq12 * (-z * (z^2 + 1) / 8) / s2^2
+  )
+  q2bc <- -pz * z / (2 * s2)
+  Eq3a <- q3a / (N * h)
+  q3bc <- pz * Eq3a / s2^2 * (z^3 / 3)
+
+  list(q1rbc = as.numeric(2 * q1bc / pz),
+       q2rbc = as.numeric(2 * q2bc / pz),
+       q3rbc = as.numeric(2 * q3bc / pz))
+}
+
+
 W.fun = function(u,kernel){
   if (kernel=="epa") w = 0.75*(1-u^2)*(abs(u)<=1)
   if (kernel=="uni") w =          0.5*(abs(u)<=1)
@@ -38,8 +253,8 @@ kd.K.fun = function(x,v,r,kernel){
       if (r==2) k = function(u)    (abs(u)<=1)*105*(-45*u^4+42*u^2-5)/32
     }
     if (kernel=="epa"){
-      if (r==0) k = function(u)   (abs(u)<=1)*(35/256)*(-99*u^6+189*x^4-105*x^2+15)
-      if (r==2) k = function(u)   (abs(u)<=1)*(315/64)*(77*x^6-135*x^4+63*x^2-5)
+      if (r==0) k = function(u)   (abs(u)<=1)*(35/256)*(-99*u^6+189*u^4-105*u^2+15)
+      if (r==2) k = function(u)   (abs(u)<=1)*(315/64)*(77*u^6-135*u^4+63*u^2-5)
     }
   }
   Kx = k(x)
@@ -162,34 +377,94 @@ lprobust.res = function(X, y, m, hii, vce, matches, dups, dupsid, d) {
 }
 
 
+## Cluster-robust meat for CR0, CR1, CR2, CR3.
+## X:       N x k design (standardized -- sqrt(W)-scaled -- for the classical
+##          variance; Q for the bias-corrected variance).
+## r:       N-long residuals (standardized sqrt(W) * raw for classical; raw
+##          for bias-corrected).
+## C:       cluster IDs.
+## invG:    k x k inverse Gram matching the design choice.
+## cr_type: one of "CR0", "CR1", "CR2", "CR3".
+lprobust.cluster.meat = function(X, r, C, invG, cr_type, k_override = NULL) {
+  # k_override: when supplied, overrides the (N-1)/(N-k) df correction's k
+  # for CR1. Used when X is a "score-like" matrix (e.g. Q.q) whose ncol is
+  # smaller than the effective number of regressors that produced r. Without
+  # it, the bias-corrected CR1 path used k=p+1 from ncol(Q.q), inconsistent
+  # with the q-regression that produced the residuals (k = q+1).
+  # Note: k is the matrix dimension; k_df is what enters the CR1 mult.
+  clusters <- unique(C)
+  G <- length(clusters)
+  N <- length(r)
+  k    <- ncol(X)
+  k_df <- if (is.null(k_override)) k else k_override
+  M <- matrix(0, k, k)
+
+  for (cl in clusters) {
+    ind <- C == cl
+    Xg  <- X[ind, , drop = FALSE]
+    rg  <- as.numeric(r[ind])
+
+    if (cr_type %in% c("CR0", "CR1")) {
+      r_adj <- rg
+    } else {
+      H_gg <- Xg %*% invG %*% t(Xg)
+      H_gg <- (H_gg + t(H_gg)) / 2          # enforce symmetry numerically
+      I_H  <- diag(nrow(Xg)) - H_gg
+      if (cr_type == "CR2") {
+        ev <- eigen(I_H, symmetric = TRUE)
+        vals <- pmax(ev$values, 1e-12)
+        r_adj <- as.numeric(ev$vectors %*% (t(ev$vectors) %*% rg / sqrt(vals)))
+      } else {   # CR3
+        r_adj <- tryCatch(drop(solve(I_H, rg)),
+                          error = function(e) {
+                            ev <- eigen(I_H, symmetric = TRUE)
+                            vals <- pmax(ev$values, 1e-12)
+                            as.numeric(ev$vectors %*% (t(ev$vectors) %*% rg / vals))
+                          })
+      }
+    }
+    score <- crossprod(Xg, r_adj)
+    M <- M + tcrossprod(score)
+  }
+
+  mult <- switch(cr_type,
+                 "CR0" = 1,
+                 "CR1" = ((N - 1) / (N - k_df)) * (G / (G - 1)),
+                 "CR2" = 1,
+                 "CR3" = (G - 1) / G)
+  mult * M
+}
+
 lprobust.vce = function(RX, res, C) {
   n = length(C)
   k = ncol(RX)
-  M = matrix(0,k,k)
+  M = matrix(0, k, k)
   if (is.null(C)) {
-    w = 1
-    M = crossprod(c(res)*RX)
-  }
-  else {	
+    M = crossprod(c(res) * RX)
+  } else {
     clusters = unique(C)
     g        = length(clusters)
-    w        = ((n-1)/(n-k))*(g/(g-1))
+    w        = ((n - 1) / (n - k)) * (g / (g - 1))
     for (i in 1:g) {
-        ind = C==clusters[i]
-        Xi  = RX[ind,]
-        ri  = res[ind,]
-        M   = M + crossprod(t(crossprod(Xi,ri)),t(crossprod(Xi,ri)))
+      ind = C == clusters[i]
+      Xi  = RX[ind, , drop = FALSE]
+      ri  = res[ind, , drop = FALSE]
+      score = crossprod(Xi, ri)
+      M = M + tcrossprod(score)
     }
+    M = w * M
   }
   return(M)
 }
 
-lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce, nnmatch, kernel, dups, dupsid) {
-  
+lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce, nnmatch, kernel, dups, dupsid, weights = NULL) {
+
+  if (is.null(weights)) weights <- rep(1, length(X))
+
   ### Variance
   dC = 0
   eC = NULL
-  w = W.fun((X-c)/h.V, kernel)/h.V
+  w = W.fun((X-c)/h.V, kernel)/h.V * weights
   ind.V = w> 0; eY = Y[ind.V];eX = X[ind.V];eW = w[ind.V]
   n.V = sum(ind.V)
   R.V = matrix(NA,n.V,o+1)
@@ -211,10 +486,7 @@ lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce
   if (vce=="hc0" | vce=="hc1" | vce=="hc2" | vce=="hc3") {
     predicts.V=R.V%*%beta.V
     if (vce=="hc2" | vce=="hc3") {
-      hii=matrix(NA,n.V,1)
-      for (i in 1:n.V) {
-        hii[i] = R.V[i,]%*%invG.V%*%(R.V*eW)[i,]
-      }
+      hii <- matrix(rowSums((R.V %*% invG.V) * (R.V * eW)), n.V, 1)
     }
   }
   res.V = lprobust.res(eX, eY, predicts.V, hii, vce, nnmatch, dups.V, dupsid.V, o+1)
@@ -229,13 +501,13 @@ lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce
   BConst1 = (Hp*(invG.V%*%v1))[nu+1]
   BConst2 = (Hp*(invG.V%*%v2))[nu+1]
 
-  w = W.fun((X-c)/h.B1, kernel)
+  w = W.fun((X-c)/h.B1, kernel) * weights
   ind = w> 0
   n.B = sum(ind)
   eY = Y[ind];eX = X[ind];eW = w[ind]
-  
-  if (!is.null(cluster)) eC =  cluster[ind] 
-  
+
+  if (!is.null(cluster)) eC =  cluster[ind]
+
   R.B1 = matrix(NA,n.B,o.B+1)
   for (j in 1:(o.B+1)) R.B1[,j] = (eX-c)^(j-1)
   invG.B1 = qrXXinv(R.B1*sqrt(eW))
@@ -252,10 +524,7 @@ lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce
     if (vce=="hc0" | vce=="hc1" | vce=="hc2" | vce=="hc3") {
       predicts.B = R.B1%*%beta.B1
       if (vce=="hc2" | vce=="hc3") {
-        hii=matrix(NA,n.B,1)
-        for (i in 1:n.B) {
-          hii[i] = R.B1[i,]%*%invG.B1%*%(R.B1*eW)[i,]
-        }
+        hii <- matrix(rowSums((R.B1 %*% invG.B1) * (R.B1 * eW)), n.B, 1)
       }
     }
     res.B = lprobust.res(eX, eY, predicts.B, hii, vce, nnmatch, dups.B, dupsid.B,o.B+1)
@@ -263,11 +532,11 @@ lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce
     BWreg = 3*BConst1^2*V.B
   }
   
-  w = W.fun((X-c)/h.B2, kernel)
+  w = W.fun((X-c)/h.B2, kernel) * weights
   ind = w> 0
   n.B = sum(ind)
   eY = Y[ind];eX = X[ind];eW = w[ind]
-  
+
   R.B2 = matrix(NA,n.B,o.B+2)
   for (j in 1:(o.B+2)) R.B2[,j] = (eX-c)^(j-1)
   invG.B2 = qrXXinv(R.B2*sqrt(eW))
@@ -288,7 +557,9 @@ lprobust.bw = function(Y, X, cluster, c, o, nu, o.B, h.V, h.B1, h.B2, scale, vce
 }
 
 
-lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nnmatch, interior, bwregul){
+lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nnmatch, interior, bwregul, weights = NULL){
+
+  if (is.null(weights)) weights <- rep(1, length(x))
   
   rho <- 1
   bwregul <- 0
@@ -312,10 +583,10 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
   }
 
   X.h <- (x-eval)/h;  X.b <- (x-eval)/b
-  K.h <- W.fun(X.h,kernel);  L.b <- W.fun(X.b,kernel)
+  K.h <- W.fun(X.h,kernel) * weights
+  L.b <- W.fun(X.b,kernel) * weights
   ind.h <- K.h>0;    ind.b <- L.b>0
-  ind <- ind.h
-  if (h>b) ind=ind.h
+  ind <- ind.h | ind.b
   eN   <- sum(ind)
   eY   <-   y[ind];  eX   <-   x[ind]
   eX.h <- X.h[ind];  eX.b <- X.b[ind]
@@ -338,16 +609,11 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
   invG.p <- eN*qrXXinv(R.p*sqrt(W.p))
   invG.q <- eN*qrXXinv(R.q*sqrt(W.q))
 
-  edups <- edupsid <- 0	
+  edups <- edupsid <- 0
   if (vce=="nn") {
-    for (j in 1:eN) {
-      edups[j]=sum(eX==eX[j])
-    }
-    j=1
-    while (j<=eN) {
-      edupsid[j:(j+edups[j]-1)] <- 1:edups[j]
-      j <- j+edups[j]
-    }
+    runs    <- rle(eX)
+    edups   <- rep.int(runs$lengths, runs$lengths)
+    edupsid <- sequence(runs$lengths)
   }
   
   hii=predicts.p=predicts.q=0
@@ -360,8 +626,7 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
     for (j in 1:(q+1))  r.q[,j] <- (eX-eval)^(j-1)
     for (j in 1:eN) predicts[j] <- r.q[j,]%*%beta.q
     if (vce=="hc2" | vce=="hc3") {
-      hii <- matrix(NA,eN,1)
-      for (j in 1:eN) hii[j] <- (R.p[j,]%*%invG.p%*%(R.p*W.p)[j,])/eN
+      hii <- matrix(rowSums((R.p %*% invG.p) * (R.p * W.p)) / eN, eN, 1)
     }
   }
 
@@ -402,7 +667,7 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
     #BConst = (Hp*(invG.reg%*%v))[1]
   }  
   
-  if (interior==TRUE) {
+  if (isTRUE(interior)) {
     eta.bc1  <- (t(e.0)%*%invG.p)%*%(   (m.p.2/factorial(p+2))*L.p.2/h     + (m.p.3/factorial(p+3))*L.p.3 )
     eta.bc2  <- rho^(-2)*b^(q-p-1)*(t(e.0)%*%invG.p)%*%L.p.1%*%t(e.p.1)%*%invG.q%*%( (m.p.2/factorial(p+2))*L.q.1/b     + (m.p.3/factorial(p+3))*L.q.2 )
     eta.bc   <- (eta.bc1 - eta.bc2)
@@ -413,7 +678,7 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
     h.ce.dpi <- h.bc$minimum*N^(-1/(p+4))
   }
 
-  if (interior==FALSE) {
+  if (isFALSE(interior)) {
     eta.bc.1 <- (t(e.0)%*%invG.p)%*%( L.p.2 - rho^(-1)*L.p.1%*%t(e.p.1)%*%invG.q%*%L.q.1)*(m.p.2/factorial(p+2))
     eta.bc.2 <- (t(e.0)%*%invG.p)%*%( L.p.3 - rho^(-2)*L.p.1%*%t(e.p.1)%*%invG.q%*%L.q.2)*(m.p.3/factorial(p+3))
     Reg      <- 3*((t(e.0)%*%invG.p)%*%( L.p.2 - rho^(-1)*L.p.1%*%t(e.p.1)%*%invG.q%*%L.q.1))^2*V.reg
@@ -431,31 +696,32 @@ lpbwselect.ce.dpi = function(y, x, h, b, eval, p, q, deriv, rho, kernel, vce, nn
   return(out)
 }
 
-lpbwselect.imse.dpi = function(y, x, cluster, p, q, deriv, kernel, bwcheck, bwregul, imsegrid, vce, nnmatch, interior){
+lpbwselect.imse.dpi = function(y, x, cluster, p, q, deriv, kernel, bwcheck, bwregul, imsegrid, vce, nnmatch, interior, weights = NULL){
 
   N <- length(x)
   x.max <- max(x);  x.min <- min(x)
   range <- x.max - x.min
   eval <- seq(x.min, x.max, length.out=imsegrid)
-  #eval <- quantile(x, probs = seq(0.05, 0.95, 0.025))
   neval = length(eval)
   even <- (p-deriv)%%2==0
   V.h <- B.h <- V.b <- B.b <- 0
 
   for (i in 1:neval) {
-    est <- lpbwselect.mse.dpi(y=y, x=x, cluster=cluster, eval=eval[i], p=p, q=q, deriv=deriv, kernel=kernel,
-                              bwcheck=bwcheck, bwregul=bwregul, vce=vce, nnmatch=nnmatch, interior=interior)
-    
+    est <- lpbwselect.mse.dpi(y=y, x=x, cluster=cluster, weights=weights,
+                              eval=eval[i], p=p, q=q, deriv=deriv,
+                              kernel=kernel, bwcheck=bwcheck, bwregul=bwregul,
+                              vce=vce, nnmatch=nnmatch, interior=interior)
+
     V.h[i] <- est$V.h;    B.h[i] <- est$B.h
     V.b[i] <- est$V.b;    B.b[i] <- est$B.b
   }
 
-  if (even==FALSE | interior==TRUE) {
+  if (isFALSE(even) | isTRUE(interior)) {
     b.imse.dpi <- (mean(V.b)/(N*mean(B.b)))^(1/(2*q+3))
     h.imse.dpi <- (mean(V.h)/(N*mean(B.h)))^(1/(2*p+3))
   }
 
-  if (even==TRUE & interior==FALSE) {
+  if (isTRUE(even) & isFALSE(interior)) {
     b.bw.fun   <- function(H) {abs(H^(2*q+2-2*(p+1))*mean(B.b) + mean(V.b)/(N*H^(1+2*(p+1))))}
     b.imse.dpi <- optimize(b.bw.fun, interval=c(.Machine$double.eps, range))$minimum
 
@@ -484,7 +750,7 @@ lpbwselect.imse.rot = function(y, x, p, deriv, kernel, imsegrid){
     V[i] <- est$V;    B[i] <- est$B
   }
   
-  if (even==FALSE) {
+  if (isFALSE(even)) {
     h.imse.rot <- (mean((1+2*deriv)*V)/(N*mean(2*(p+1-deriv)*B^2)))^(1/(2*p+3))
   } else {
     h.bw.fun   <- function(H) {abs(H^(2*p+2-2*deriv)*mean(B^2) + mean(V)/(N*H^(1+2*deriv)))}
@@ -495,7 +761,7 @@ lpbwselect.imse.rot = function(y, x, p, deriv, kernel, imsegrid){
 }
 
 
-lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck, bwregul, vce, nnmatch, interior){
+lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck, bwregul, vce, nnmatch, interior, weights = NULL){
 
   even <- (p-deriv)%%2==0
 
@@ -518,14 +784,9 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
   if (vce=="nn") {
     order.x = order(x)
     x = x[order.x];   y = y[order.x]
-    for (j in 1:N) {
-      dups[j]=sum(x==x[j])
-    }
-    j=1
-    while (j<=N) {
-      dupsid[j:(j+dups[j]-1)] = 1:dups[j]
-      j = j+dups[j]
-    }
+    runs   <- rle(x)
+    dups   <- rep.int(runs$lengths, runs$lengths)
+    dupsid <- sequence(runs$lengths)
   }
 
   bw.adj <- 0
@@ -536,8 +797,8 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
     bw.adj <- 1
   }
 
-   C.d1 <- lprobust.bw(y, x, cluster, c=eval, o=q+1, nu=q+1, o.B=q+2, h.V=c.bw, h.B1=range, h.B2=range, 0, vce, nnmatch, kernel, dups, dupsid)
-   if (even==FALSE | interior==TRUE) {
+   C.d1 <- lprobust.bw(y, x, cluster, c=eval, o=q+1, nu=q+1, o.B=q+2, h.V=c.bw, h.B1=range, h.B2=range, 0, vce, nnmatch, kernel, dups, dupsid, weights = weights)
+   if (isFALSE(even) | isTRUE(interior)) {
        bw.mp2 <- c(C.d1$bw)
     }
     else{
@@ -546,8 +807,8 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
    }
    
 
-    C.d2 <- lprobust.bw(y, x, cluster, c=eval, o=q+2, nu=q+2, o.B=q+3, h.V=c.bw, h.B1=range, h.B2=range, 0, vce, nnmatch, kernel, dups, dupsid)
-    if (even==FALSE | interior==TRUE) {
+    C.d2 <- lprobust.bw(y, x, cluster, c=eval, o=q+2, nu=q+2, o.B=q+3, h.V=c.bw, h.B1=range, h.B2=range, 0, vce, nnmatch, kernel, dups, dupsid, weights = weights)
+    if (isFALSE(even) | isTRUE(interior)) {
       bw.mp3 <- c(C.d2$bw)
     }
     else {
@@ -566,9 +827,9 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
     
     
     ### Select preliminar bw b
-    C.b <- lprobust.bw(y, x, cluster, c=eval, o=q, nu=p+1, o.B=q+1, h.V=c.bw, h.B1=bw.mp2, h.B2=bw.mp3, bwregul, vce, nnmatch, kernel, dups, dupsid)
+    C.b <- lprobust.bw(y, x, cluster, c=eval, o=q, nu=p+1, o.B=q+1, h.V=c.bw, h.B1=bw.mp2, h.B2=bw.mp3, bwregul, vce, nnmatch, kernel, dups, dupsid, weights = weights)
     
-    if (even==FALSE | interior==TRUE) {
+    if (isFALSE(even) | isTRUE(interior)) {
       b.mse.dpi <- c(C.b$bw)
     }
     else {
@@ -582,9 +843,9 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
     bw.mp1 = b.mse.dpi
     
     ### Select final bw h
-    C.h <- lprobust.bw(y, x, cluster, c=eval, o=p, nu=deriv, o.B=q, h.V=c.bw, h.B1=bw.mp1, h.B2=bw.mp2, bwregul, vce, nnmatch, kernel, dups, dupsid)
+    C.h <- lprobust.bw(y, x, cluster, c=eval, o=p, nu=deriv, o.B=q, h.V=c.bw, h.B1=bw.mp1, h.B2=bw.mp2, bwregul, vce, nnmatch, kernel, dups, dupsid, weights = weights)
     
-    if (even==FALSE | interior==TRUE) {
+    if (isFALSE(even) | isTRUE(interior)) {
       h.mse.dpi <- c(C.h$bw)
     } else {
       h.bw.fun = function(H) {abs(H^(2*p+2-2*deriv)*(C.h$B1 + H*C.h$B2 + bwregul*C.h$R)^2 + C.h$V/(N*H^(1+2*deriv)))}
@@ -594,7 +855,7 @@ lpbwselect.mse.dpi = function(y, x, cluster, eval, p, q, deriv, kernel, bwcheck,
     h.mse.dpi <- min(h.mse.dpi, bw.max) 
     if (!is.null(bwcheck)) h.mse.dpi <- max(h.mse.dpi, bw.min)
   
-    if (even==FALSE | interior==TRUE) {
+    if (isFALSE(even) | isTRUE(interior)) {
       V.h <- C.h$rV*C.h$V;    B.h <- C.h$rB*C.h$B1^2
       V.b <- C.b$rV*C.b$V;    B.b <- C.b$rB*C.b$B1^2
     } else {
@@ -655,7 +916,7 @@ lpbwselect.mse.rot = function(y, x, eval, p, deriv, kernel){
   B2 = bw$C1*m.p.2/factorial(p+2)
   V  = bw$C2*s2.hat/f.hat
 
-  if (even==FALSE) {
+  if (isFALSE(even)) {
     h.mse.rot <- bw$bw
     B <- B1
   } else {
@@ -667,7 +928,5 @@ lpbwselect.mse.rot = function(y, x, eval, p, deriv, kernel){
   out <- list(h=h.mse.rot, V=V, B=B)
   return(out)
 }
-
-
 
 

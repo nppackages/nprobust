@@ -1,127 +1,112 @@
 ########################################################################
-## REPLICATION FILES: Calonico, Cattaneo and Farrell (2018)
-## nprobust: Nonparametric Kernel-Based Estimation and Robust Bias-Corrected Inference
-## Last update: 03-Apr-2025
+## NPROBUST Package
+## Numerical Illustration
 ########################################################################
-rm(list=ls(all=TRUE))
-library(TeachingDemos); library(ggplot2);
+rm(list = ls(all = TRUE))
+library(ggplot2)
 library(nprobust)
 
-#######################################################
-## SET =TRUE TO GENERATE OUTPUTS
-do.output = TRUE
-#######################################################
-
-## Install NPPACKAGE Package
-if(do.output) txtStart("output/nprobust_1.txt", results = FALSE)
-install.packages("nprobust")
-if(do.output) txtStop()
-
-## Help NPPACKAGE Package
-if(do.output) txtStart("output/nprobust_2.txt", results = FALSE)
-help(package="nprobust")
-if(do.output) txtStop()
-
-if(do.output) txtStart("output/nprobust_3.txt", results = FALSE)
-library(nprobust)
-if(do.output) txtStop()
-
-if(do.output) txtStart("output/nprobust_4.txt")
-chole = read.csv("nprobust_data.csv")
+cat("\n=== Setup: cholesterol trial data ===\n")
+script_args <- commandArgs(trailingOnly = FALSE)
+script_file <- sub("^--file=", "", script_args[grepl("^--file=", script_args)][1])
+script_dir <- if (!is.na(script_file)) {
+  dirname(normalizePath(script_file, mustWork = FALSE))
+} else {
+  getwd()
+}
+chole <- read.csv(file.path(script_dir, "nprobust_data.csv"))
 summary(chole)
-if(do.output) txtStop()
-attach(chole)
 
-if(do.output) txtStart("output/nprobust_5.txt")
-f0_chol1 = kdrobust(chol1, subset=(t==0), neval=7)
-summary(f0_chol1)
-if(do.output) txtStop()
+t <- chole$t
+chol1 <- chole$chol1
+chol2 <- chole$chol2
+cholf <- chole$cholf
+comp <- chole$comp
+control <- t == 0
+treated <- t == 1
 
-summary(kdrobust(chol1, subset=(t==0), neval=7, bwselect="MSE-DPI"))
-summary(kdrobust(chol1, subset=(t==0), neval=30, bwselect="IMSE-DPI"))
+cat("\n=== 1. Kernel density reports for baseline cholesterol ===\n")
+# Default IMSE-DPI bandwidth on seven evaluation points.
+summary(kdrobust(chol1, subset = control, neval = 7))
 
-if(do.output) txtStart("output/nprobust_6.txt", results = FALSE)
-ev1=seq(250,350,length.out=30)
-ev2=seq(0,100,  length.out=30)
-f0_chol1 = kdrobust(chol1, subset=(t==0), eval=ev1)
-f1_chol1 = kdrobust(chol1, subset=(t==1), eval=ev1)
-f0_chol2 = kdrobust(chol2, subset=(t==0), eval=ev1)
-f1_chol2 = kdrobust(chol2, subset=(t==1), eval=ev1)
-f0_cholf = kdrobust(cholf, subset=(t==0), eval=ev1)
-f1_cholf = kdrobust(cholf, subset=(t==1), eval=ev1)
-f0_comp  = kdrobust(comp,  subset=(t==0), eval=ev2)
-f1_comp  = kdrobust(comp,  subset=(t==1), eval=ev2)
-if(do.output) txtStop()
+# Pointwise MSE-DPI bandwidth on seven evaluation points.
+summary(kdrobust(chol1, subset = control, neval = 7, bwselect = "MSE-DPI"))
 
-if(do.output) txtStart("output/nprobust_7.txt")
-nprobust.plot(f0_chol1,f1_chol1, legendGroups=c("Control Group", "Treatment Group"), 
-                                 xlabel="Cholesterol at Baseline 1", ylabel="Density")+theme(legend.position=c(.4,.2))
-ggsave("output/kd-chol1.pdf", width=4, height=4)
-nprobust.plot(f0_chol2,f1_chol2, xlabel="Cholesterol at Baseline 2",
-                                 ylabel="Density")+theme(legend.position="none")
-ggsave("output/kd-chol2.pdf", width=4, height=4)
-nprobust.plot(f0_cholf,f1_cholf, xlabel="Cholesterol after Treatment",
-                                 ylabel="Density")+theme(legend.position="none")
-ggsave("output/kd-cholf.pdf", width=4, height=4)
-nprobust.plot(f0_comp,f1_comp, xlabel="Treatment Compliance",
-                               ylabel="Density")+theme(legend.position="none")
-ggsave("output/kd-comp.pdf", width=4, height=4)
-if(do.output) txtStop()
+# IMSE-DPI bandwidth on the default denser 30-point grid.
+summary(kdrobust(chol1, subset = control, neval = 30, bwselect = "IMSE-DPI"))
 
-t.test(cholf[t==0],cholf[t==1])
-t.test(comp[t==0],comp[t==1])
+cat("\n=== 2. Kernel density estimates on common grids ===\n")
+# Common grids for cholesterol variables and treatment compliance.
+grid_chol <- seq(250, 350, length.out = 21)
+grid_comp <- seq(0, 100, length.out = 21)
 
-if(do.output) txtStart("output/nprobust_8.txt", results = FALSE)
-ev=seq(250,350,length.out=30)
-m0_cholf_1 = lprobust(cholf, chol1, subset=(t==0), eval=ev)
-m1_cholf_1 = lprobust(cholf, chol1, subset=(t==1), eval=ev)
-m0_comp_1  = lprobust(comp,  chol1, subset=(t==0), eval=ev)
-m1_comp_1  = lprobust(comp,  chol1, subset=(t==1), eval=ev)
-m0_cholf_2 = lprobust(cholf, chol2, subset=(t==0), eval=ev)
-m1_cholf_2 = lprobust(cholf, chol2, subset=(t==1), eval=ev)
-m0_comp_2  = lprobust(comp,  chol2, subset=(t==0), eval=ev)
-m1_comp_2  = lprobust(comp,  chol2, subset=(t==1), eval=ev)
-if(do.output) txtStop()
+# Kernel density estimates for baseline, follow-up, and compliance variables.
+f0_chol1 <- kdrobust(chol1, subset = control, eval = grid_chol)
+f1_chol1 <- kdrobust(chol1, subset = treated, eval = grid_chol)
+f0_chol2 <- kdrobust(chol2, subset = control, eval = grid_chol)
+f1_chol2 <- kdrobust(chol2, subset = treated, eval = grid_chol)
+f0_cholf <- kdrobust(cholf, subset = control, eval = grid_chol)
+f1_cholf <- kdrobust(cholf, subset = treated, eval = grid_chol)
+f0_comp <- kdrobust(comp, subset = control, eval = grid_comp)
+f1_comp <- kdrobust(comp, subset = treated, eval = grid_comp)
 
-if(do.output) txtStart("output/nprobust_9.txt")
-summary(lprobust(cholf, chol1, subset=(t==0), eval=ev[1:7]))
-if(do.output) txtStop()
+# Report the first five common-grid density estimates for baseline cholesterol.
+head(f0_chol1$Estimate, 5)
+head(f1_chol1$Estimate, 5)
 
-if(do.output) txtStart("output/nprobust_10.txt")
-nprobust.plot(m0_cholf_1,m1_cholf_1, legendGroups=c("Control Group", "Treatment Group"),
-                                     xlabel="Cholesterol at Baseline 1",
-                                     ylabel="Cholesterol after Treatment")+theme(legend.position=c(.3,.8))
-ggsave("output/lp-cholf-1.pdf", width=4, height=4)
-nprobust.plot(m0_cholf_2,m1_cholf_2, xlabel="Cholesterol at Baseline 2",
-                                     ylabel="Cholesterol after Treatment")+theme(legend.position="none")
-ggsave("output/lp-cholf-2.pdf", width=4, height=4)
-nprobust.plot(m0_comp_1,m1_comp_1, xlabel="Cholesterol at Baseline 1",
-                                   ylabel="Treatment Complaince")+theme(legend.position="none")
-ggsave("output/lp-comp-1.pdf", width=4, height=4)
-nprobust.plot(m0_comp_2,m1_comp_2, xlabel="Cholesterol at Baseline 2",
-                                   ylabel="Treatment Complaince")+theme(legend.position="none")
-ggsave("output/lp-comp-2.pdf", width=4, height=4)
-if(do.output) txtStop()
+# Kernel density plots for the main trial variables.
+p_kd_chol1 <- nprobust.plot(f0_chol1, f1_chol1, legendGroups = c("Control Group", "Treatment Group"), xlabel = "Cholesterol at Baseline 1", ylabel = "Density") + theme(legend.position = c(.4, .2))
+p_kd_chol2 <- nprobust.plot(f0_chol2, f1_chol2, xlabel = "Cholesterol at Baseline 2", ylabel = "Density") + theme(legend.position = "none")
+p_kd_cholf <- nprobust.plot(f0_cholf, f1_cholf, xlabel = "Cholesterol after Treatment", ylabel = "Density") + theme(legend.position = "none")
+p_kd_comp <- nprobust.plot(f0_comp, f1_comp, xlabel = "Treatment Compliance", ylabel = "Density") + theme(legend.position = "none")
 
-if(do.output) txtStart("output/nprobust_11.txt")
-  summary(lpbwselect(cholf, chol1, subset=(t==0), eval=ev[1:7]))
-if(do.output) txtStop()
+cat("\n=== 3. Difference in means ===\n")
+# Difference in means for outcome and compliance.
+t.test(cholf[control], cholf[treated])
+t.test(comp[control], comp[treated])
 
-summary(lpbwselect(cholf, chol1, subset=(t==0), eval = seq(250,350,length.out=30)[1:7]))
-summary(lpbwselect(cholf, chol1, subset=(t==0), eval = seq(250,350,length.out=30)[1:7], bwselect="CE-DPI"))
+cat("\n=== 4. Local polynomial regression on common grids ===\n")
+# Local polynomial regression estimates for outcomes and compliance.
+m0_cholf_1 <- lprobust(cholf, chol1, subset = control, eval = grid_chol)
+m1_cholf_1 <- lprobust(cholf, chol1, subset = treated, eval = grid_chol)
+m0_comp_1 <- lprobust(comp, chol1, subset = control, eval = grid_chol)
+m1_comp_1 <- lprobust(comp, chol1, subset = treated, eval = grid_chol)
+m0_cholf_2 <- lprobust(cholf, chol2, subset = control, eval = grid_chol)
+m1_cholf_2 <- lprobust(cholf, chol2, subset = treated, eval = grid_chol)
+m0_comp_2 <- lprobust(comp, chol2, subset = control, eval = grid_chol)
+m1_comp_2 <- lprobust(comp, chol2, subset = treated, eval = grid_chol)
 
-if(do.output) txtStart("output/nprobust_12.txt")
-summary(lpbwselect(cholf, chol1, subset=(t==0), eval = ev[1:7], bwselect="ALL"))
-if(do.output) txtStop()
+# Report local polynomial regression for the first seven grid points.
+grid7 <- grid_chol[1:7]
+summary(lprobust(cholf, chol1, subset = control, eval = grid7))
 
-#######################################################
-## REPLICATION: Figure 1 of Efron and Feldman (1991)
-#######################################################
-y = 0.25*chol1 + 0.75*chol2 - cholf
-x = comp
-t = t
+# Local polynomial regression plots for the main trial variables.
+p_lp_cholf_1 <- nprobust.plot(m0_cholf_1, m1_cholf_1, legendGroups = c("Control Group", "Treatment Group"), xlabel = "Cholesterol at Baseline 1", ylabel = "Cholesterol after Treatment") + theme(legend.position = c(.3, .8))
+p_lp_cholf_2 <- nprobust.plot(m0_cholf_2, m1_cholf_2, xlabel = "Cholesterol at Baseline 2", ylabel = "Cholesterol after Treatment") + theme(legend.position = "none")
+p_lp_comp_1 <- nprobust.plot(m0_comp_1, m1_comp_1, xlabel = "Cholesterol at Baseline 1", ylabel = "Treatment Compliance") + theme(legend.position = "none")
+p_lp_comp_2 <- nprobust.plot(m0_comp_2, m1_comp_2, xlabel = "Cholesterol at Baseline 2", ylabel = "Treatment Compliance") + theme(legend.position = "none")
 
-m0=lprobust(y,x,subset=(t==0),neval=100)
-m1=lprobust(y,x,subset=(t==1),neval=100)
-nprobust.plot(m1,m0, xlabel="Compliance", ylabel="Cholesterol Difference")
+cat("\n=== 5. Bandwidth selection ===\n")
+# Local polynomial bandwidth selection with MSE-DPI, CE-DPI, and all selectors.
+summary(lpbwselect(cholf, chol1, subset = control, eval = grid7))
+summary(lpbwselect(cholf, chol1, subset = control, eval = grid7, bwselect = "CE-DPI"))
+summary(lpbwselect(cholf, chol1, subset = control, eval = grid7, bwselect = "ALL"))
 
+# Kernel density bandwidth selection with MSE-DPI and IMSE-DPI selectors.
+summary(kdbwselect(chol1, subset = control))
+summary(kdbwselect(chol1, subset = control, bwselect = "IMSE-DPI"))
+
+cat("\n=== 6. Efron-Feldman compliance plot ===\n")
+# Replication of the Efron and Feldman (1991) compliance plot.
+y_ef <- 0.25 * chol1 + 0.75 * chol2 - cholf
+x_ef <- comp
+m0_ef <- lprobust(y_ef, x_ef, subset = control, neval = 100)
+m1_ef <- lprobust(y_ef, x_ef, subset = treated, neval = 100)
+p_ef <- nprobust.plot(m1_ef, m0_ef, legendGroups = c("Treatment Group", "Control Group"), xlabel = "Compliance", ylabel = "Cholesterol Difference")
+
+# Print plots only in interactive sessions to avoid creating Rplots.pdf in batch runs.
+if (interactive()) {
+  print(p_kd_chol1); print(p_kd_chol2); print(p_kd_cholf); print(p_kd_comp)
+  print(p_lp_cholf_1); print(p_lp_cholf_2); print(p_lp_comp_1); print(p_lp_comp_2)
+  print(p_ef)
+}

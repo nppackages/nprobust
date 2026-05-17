@@ -1,11 +1,11 @@
 v 3
 d STATA Package: NPROBUST
 d 
-d Authors: Sebastian Calonico, Graduate School of Management, University of California, Davis, scalonico@ucdavis.edu
-d          Matias D. Cattaneo, Operations Research and Financial Engineering, Princeton University, cattaneo@princeton.edu
-d          Max H. Farrell, Economics Department, University of California, Santa Barbara, maxhfarrell@ucsb.edu
+d Authors: Sebastian Calonico, University of California, Davis, scalonico@ucdavis.edu
+d          Matias D. Cattaneo, Princeton University, matias.d.cattaneo@gmail.com
+d          Max H. Farrell, University of California, Santa Barbara, mhfarrell@gmail.com
 d
-d Distribution-Date: 20250414
+d Distribution-Date: 20260517
 d 
 f kdbwselect.ado
 f kdbwselect.sthlp
@@ -15,14 +15,24 @@ f lpbwselect.ado
 f lpbwselect.sthlp
 f lprobust.ado
 f lprobust.sthlp
+f nprobust_data.dta
+f nprobust_functions.do
+f nprobust_illustration.do
 f nprobust_K_fun.mo
 f nprobust_L_fun.mo
+f nprobust_lp_brent_cedpi.mo
+f nprobust_lp_brent_mserot.mo
 f nprobust_lp_bw.mo
 f nprobust_lp_cer.mo
+f nprobust_lp_cluster_meat.mo
 f nprobust_lp_coef.mo
+f nprobust_lp_constants.mo
+f nprobust_lp_kmom1.mo
+f nprobust_lp_kmom2.mo
 f nprobust_lp_kweight.mo
 f nprobust_lp_mse.mo
 f nprobust_lp_mse_dpi.mo
+f nprobust_lp_mse_imse.mo
 f nprobust_lp_q.mo
 f nprobust_lp_res.mo
 f nprobust_lp_vce.mo

@@ -1,8 +1,9 @@
-*!version 0.4.0  2025-04-14
+*!version 1.0.0  2026-05-17
 
-capture program drop kdrobust 
+capture program drop kdrobust
 program define kdrobust, eclass
-	syntax varlist(max=1) [if] [in] [, eval(varname) neval(real 0) h(string) b(string) rho(real 1) kernel(string) bwselect(string) level(real 95) separator(integer 5) genvars plot graph_options(string)]
+	version 14.0
+	syntax varlist(max=1) [if] [in] [, eval(varname) neval(real 0) h(string) b(string) rho(real 1) kernel(string) bwselect(string) bwcheck(real 21) imsegrid(real 30) level(real 95) separator(integer 5) genvars plot graph_options(string)]
 	
 	marksample touse
 	
@@ -34,17 +35,18 @@ program define kdrobust, eclass
 	********************************************************************************
 	**** error check: grid()
 	if ("`eval'" == "") {
-		if ("`neval'" == "0") {
-			tempvar temp_grid temp_dup
-			qui duplicates tag `x' if `touse', gen(`temp_dup')
-			qui gen `temp_grid' = `x' if `temp_dup'==0
-			qui su `temp_grid'
-			local neval = r(N)
-			}
-			else {
-				qui pctile `temp_grid' = `x' if `touse', nq(`neval'+1)
-			}		
-		} 
+		if (`neval' == 0) local neval = 30
+		* Quantile grid evenly spaced in [10, 90] — mirrors R seq(0.1, 0.9, length.out=neval)
+		* and R's quantile() type 7 (linear interpolation). Done in Mata to avoid
+		* a per-eval-point dataset pass via `replace ... in i`.
+		tempvar temp_grid
+		qui gen double `temp_grid' = .
+		mata: xq = sort(st_data(., "`x'", "`touse'"), 1); ne = strtoreal(st_local("neval")); ///
+		      probs = J(ne, 1, 0.1); if (ne > 1) probs = 0.1 :+ (0::ne-1) :* (0.8/(ne-1)); ///
+		      pos = 1 :+ (rows(xq)-1) :* probs; lo = floor(pos); hi = ceil(pos); ///
+		      g = pos :- lo; qs = xq[lo] :+ g :* (xq[hi] :- xq[lo]); ///
+		      st_store((1::ne), "`temp_grid'", qs)
+	}
 	else {
 		cap confirm numeric variable `eval'
 		if _rc {
@@ -86,17 +88,19 @@ program define kdrobust, eclass
 	**** error check: kernel()
 	if ("`kernel'" == "") {
 		local kernel = "epanechnikov"
-	} 
+	}
 	else {
-		if ("`kernel'" != "triangular" & "`kernel'" != "uniform" & "`kernel'" != "epanechnikov") {
-			di as err `"kernel(): incorrectly specified: options(triangular, uniform, epanechnikov)"'
+		// kdrobust bias-correction formulas are only implemented for the
+		// Epanechnikov and Uniform kernels. Reject triangular/gaussian with
+		// a clear error.
+		if ("`kernel'" != "uni" & "`kernel'" != "uniform" & "`kernel'" != "epa" & "`kernel'" != "epanechnikov") {
+			di as err `"kernel(): incorrectly specified. Supported kernels for kdrobust: epa, uni."'
 			exit 198
 		}
 	}
 
 	if      ("`kernel'"=="epanechnikov" | "`kernel'"=="epa") local kernel_type = "Epanechnikov"
-	else if ("`kernel'"=="uniform"      | "`kernel'"=="uni") local kernel_type = "Uniform"
-	else                                                     local kernel_type = "Triangular"
+	else                                                     local kernel_type = "Uniform"
 
 	********************************************************************************
 	**** error check: level()
@@ -111,7 +115,7 @@ program define kdrobust, eclass
 		*tempvar temp_bw
 		*tempvar temp_lpbwdensity
 		*qui lpbwdensity `x' if `touse', grid(`temp_grid') p(`p') v(`v') bwselect(`bwselect') kernel(`kernel') cweights(`temp_cweights') pweights(`temp_pweights') genvars(`temp_lpbwdensity') separator(1)
-		qui kdbwselect `x' if `touse', eval(`temp_grid') kernel(`kernel') bwselect(`bwselect') 
+		qui kdbwselect `x' if `touse', eval(`temp_grid') kernel(`kernel') bwselect(`bwselect') bwcheck(`bwcheck') imsegrid(`imsegrid')
 		*qui gen `temp_bw' = `temp_lpbwdensity'_bw
 		*qui capture drop `temp_lpbwdensity'_grid `temp_lpbwdensity'_bw `temp_lpbwdensity'_nh
 	}
@@ -165,12 +169,12 @@ program define kdrobust, eclass
 	**** temporaty varaibles for plotting
 	if ("`plot'" != "" & "`genvars'" == "") {
 		tempvar plot_eval
-		tempvar plot_f_us
+		tempvar plot_tau_us
 		tempvar plot_cil_rb
 		tempvar plot_cir_rb
 	}
 
-	if ("`genvars'" != "") local genvars = "lprobust"
+	if ("`genvars'" != "") local genvars = "kdrobust"
 
 	********************************************************************************
 	**** MATA
@@ -191,10 +195,25 @@ program define kdrobust, eclass
 		}
 			
 		eval = sort(eval,1)
-		bws = st_matrix("e(bws)")
-		h = bws[,1]
-		b = bws[,2]
-		
+
+		// Fetch bandwidths: from kdbwselect's e(bws) when h was not given,
+		// or from the user-provided temp_bw variable when h is manual.
+		if ("`h'"=="") {
+			bws = st_matrix("e(bws)")
+			if (rows(bws) == 0 | cols(bws) < 2) {
+				errprintf("kdrobust: internal error — kdbwselect did not return a valid e(bws) matrix (rows=%g, cols=%g)\n", rows(bws), cols(bws))
+				exit(error(198))
+			}
+			h = bws[,1]
+			b = bws[,2]
+		}
+		else {
+			h = st_data(., "`temp_bw'", 0)
+			h = select(h, rowmissing(h):==0)
+			if (rows(h) < `neval') h = J(`neval',1,h[1])
+			b = h
+		}
+
 		if (`rho'>0)  {
 			b = h/`rho'
 		}
@@ -203,6 +222,7 @@ program define kdrobust, eclass
 		*b = J(neval, 1, `h')
 		rho = h:/b
 		Result = J(`neval', 11, .)				
+		quant = invnormal(1 - (100 - `level') / 200)
 		
 	if ("`kernel'"=="epanechnikov" | "`kernel'"=="epa") {
 				mK = 0.1
@@ -219,6 +239,12 @@ program define kdrobust, eclass
 			
 		*** Start loop over evaluation points
 		for (c=1; c<=`neval'; c++) {
+			if (`bwcheck' > 0) {
+				bw_min = sort(abs(x :- eval[c]), 1)[`bwcheck']
+				h[c] = max((h[c], bw_min))
+				b[c] = max((b[c], bw_min))
+				rho[c] = h[c]/b[c]
+			}
 		 
 		    u = (x:-eval[c])/h[c]
 			*nprobust_K(u        , "`kernel'", Kx, mK, vK)
@@ -227,13 +253,16 @@ program define kdrobust, eclass
 			Lx = nprobust_L_fun(rho[c]*u, "`kernel'")
 			*nprobust_K(rho[c]*u , "`kernel'", Lx, mL, vL)
 					
-			Mx = Kx - rho[c]^(1+`p')*Lx*mK
+			// Bug fix: bias-correction uses the k_v moment of the L kernel
+			// (mL in Stata's naming), not of K (mK).
+			Mx = Kx - rho[c]^(1+`p')*Lx*mL
 			f_us = mean(Kx)/h[c]
 			f_bc = mean(Mx)/h[c]
 			se_us = sqrt((mean((Kx:^2)) - mean(Kx):^2)/(`n'*h[c]^2))
 			se_rb = sqrt((mean((Mx:^2)) - mean(Mx):^2)/(`n'*h[c]^2))
 
-			nh = sum(abs(x :- eval[c]) :<= h[c])
+			// Bug fix: effective N should reflect the union of h- and b-windows.
+			nh = sum(abs(x :- eval[c]) :<= max((h[c], b[c])))
 			
 			Result[c, 1]  = eval[c]
 			Result[c, 2]  = h[c]
@@ -243,8 +272,8 @@ program define kdrobust, eclass
 			Result[c, 6]  = f_bc
 			Result[c, 7]  = se_us
 			Result[c, 8]  = se_rb
-			Result[c, 9]  = f_bc - 2*se_rb
-			Result[c, 10] = f_bc + 2*se_rb
+			Result[c, 9]  = f_bc - quant*se_rb
+			Result[c, 10] = f_bc + quant*se_rb
 			Result[c, 11] = c
 		
 		*** End loop over evaluation points
@@ -262,14 +291,14 @@ program define kdrobust, eclass
 		(void) 	st_addvar("double", 	invtokens((genvars, "b"), 			"_"))
 				st_store(Result[., 11], invtokens((genvars, "b"), 			"_"), Result[., 3])
 					
-		(void) 	st_addvar("double", 	invtokens((genvars, "nh"), 			"_"))
-				st_store(Result[., 11], invtokens((genvars, "nh"), 			"_"), Result[., 4])
-					
-		(void) 	st_addvar("double", 	invtokens((genvars, "f_us"), 		"_"))
-				st_store(Result[., 11], invtokens((genvars, "f_us"), 		"_"), Result[., 5])
-				
-		(void) 	st_addvar("double", 	invtokens((genvars, "f_bc"), 		"_"))
-				st_store(Result[., 11], invtokens((genvars, "f_bc"), 		"_"), Result[., 6])
+		(void) 	st_addvar("double", 	invtokens((genvars, "N"), 			"_"))
+				st_store(Result[., 11], invtokens((genvars, "N"), 			"_"), Result[., 4])
+
+		(void) 	st_addvar("double", 	invtokens((genvars, "tau_us"), 		"_"))
+				st_store(Result[., 11], invtokens((genvars, "tau_us"), 		"_"), Result[., 5])
+
+		(void) 	st_addvar("double", 	invtokens((genvars, "tau_bc"), 		"_"))
+				st_store(Result[., 11], invtokens((genvars, "tau_bc"), 		"_"), Result[., 6])
 
 		(void) 	st_addvar("double", 	invtokens((genvars, "se_us"), 		"_"))
 				st_store(Result[., 11], invtokens((genvars, "se_us"), 		"_"), Result[., 7])
@@ -287,8 +316,8 @@ program define kdrobust, eclass
 		(void) 	st_addvar("double", 	"`plot_eval'")
 				st_store(Result[., 11], "`plot_eval'", Result[., 1])
 				
-		(void) st_addvar("double", 		"`plot_f_us'")
-				st_store(Result[., 11], "`plot_f_us'", Result[., 5])
+		(void) st_addvar("double", 		"`plot_tau_us'")
+				st_store(Result[., 11], "`plot_tau_us'", Result[., 5])
 				
 		(void) st_addvar("double", 		"`plot_cil_rb'")
 				st_store(Result[., 11], "`plot_cil_rb'", Result[., 9])
@@ -306,12 +335,12 @@ program define kdrobust, eclass
 	if ("`genvars'" != "") {
 		label variable `genvars'_eval 	"kdrobust: grid point"
 		label variable `genvars'_h  	"kdrobust: bandwidth"
-		label variable `genvars'_nh 	"kdrobust: effective sample size"
-		label variable `genvars'_f_us 	"kdrobust: point estimate with pol. order `p'" 
+		label variable `genvars'_N 	"kdrobust: effective sample size"
+		label variable `genvars'_tau_us 	"kdrobust: point estimate with pol. order `p'"
 		label variable `genvars'_se_us 	"kdrobust: standard error for f_p"
 		*label variable `genvars'_CI_l_us 	"kdrobust: left level-`level' CI, conventional"
 		*label variable `genvars'_CI_r_us 	"kdrobust: right level-`level' CI, conventional"
-		label variable `genvars'_f_bc   	"kdrobust: point estimate with pol. order `q'"
+		label variable `genvars'_tau_bc   	"kdrobust: point estimate with pol. order `q'"
 		label variable `genvars'_se_rb 	    "kdrobust: standard error for f_q"
 		label variable `genvars'_CI_l_rb 	"kdrobust: left level-`level' CI, robust bias-corrected"
 		label variable `genvars'_CI_r_rb 	"kdrobust: right level-`level' CI, robust bias-corrected"		
@@ -351,7 +380,7 @@ program define kdrobust, eclass
 	**** plot
 	if ("`plot'" != "" & "`genvars'" != "") {
 		local plot_eval	    "`genvars'_eval"
-		local plot_f_us	    "`genvars'_f_us"
+		local plot_tau_us	    "`genvars'_tau_us"
 		local plot_cil_rb	"`genvars'_CI_l_rb"
 		local plot_cir_rb 	"`genvars'_CI_r_rb"
 	}
@@ -359,7 +388,7 @@ program define kdrobust, eclass
 	if ("`plot'" != "") {
 		if (`"`graph_options'"'=="" ) local graph_options = `"title("kdrobust", color(gs0)) xtitle("`x'") ytitle("")"'
 		twoway 	(rarea `plot_cil_rb' `plot_cir_rb' `plot_eval', sort color(gs11)) ///
-				(line `plot_f_us' `plot_eval',  lcolor(black) sort lwidth(medthin) lpattern(solid)),  ///
+				(line `plot_tau_us' `plot_eval',  lcolor(black) sort lwidth(medthin) lpattern(solid)),  ///
 				legend(cols(2) order(2 "point estimate" 1 "`level'% C.I." )) `graph_options'
 	}
 	
@@ -372,11 +401,10 @@ program define kdrobust, eclass
 	
 	ereturn local kernel = "`kernel_type'"
 	ereturn local bwselect = "`bwselect'"
-	ereturn local vce_select = "`vce_type'"
-	ereturn local varname "`x'"
+	ereturn local xvar "`x'"
 	ereturn local cmd "kdrobust"
 	
-	matrix colnames Result = eval h b nh f_us f_bc se_us se_rb CI_l_rb CI_r_rb
+	matrix colnames Result = eval h b N tau_us tau_bc se_us se_rb CI_l_rb CI_r_rb
 	ereturn matrix Result = Result
 	
 	mata mata clear	

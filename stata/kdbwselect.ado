@@ -1,8 +1,9 @@
-*!version 0.4.0  2025-04-14
+*!version 1.0.0  2026-05-17
 
 capture program drop kdbwselect
 program define kdbwselect, eclass
-	syntax varlist(max=1) [if] [in] [, eval(varname) neval(real 0) kernel(string) bwselect(string) separator(integer 5)]
+	version 14.0
+	syntax varlist(max=1) [if] [in] [, eval(varname) neval(real 0) kernel(string) bwselect(string) bwcheck(real 21) imsegrid(real 30) separator(integer 5)]
 
 	marksample touse
 	
@@ -37,17 +38,18 @@ program define kdbwselect, eclass
 	********************************************************************************
 	**** error check: grid()
 	if ("`eval'" == "") {
-		if ("`neval'" == "0") {
-			tempvar temp_grid temp_dup
-			qui duplicates tag `x' if `touse', gen(`temp_dup')
-			qui gen `temp_grid' = `x' if `temp_dup'==0
-			qui su `temp_grid'
-			local neval = r(N)
-			}
-			else {
-				qui pctile `temp_grid' = `x' if `touse', nq(`neval'+1)
-			}		
-		} 
+		if (`neval' == 0) local neval = 30
+		* Quantile grid evenly spaced in [10, 90] — mirrors R seq(0.1, 0.9, length.out=neval)
+		* and R's quantile() type 7 (linear interpolation). Done in Mata to avoid
+		* a per-eval-point dataset pass via `replace ... in i`.
+		tempvar temp_grid
+		qui gen double `temp_grid' = .
+		mata: xq = sort(st_data(., "`x'", "`touse'"), 1); ne = strtoreal(st_local("neval")); ///
+		      probs = J(ne, 1, 0.1); if (ne > 1) probs = 0.1 :+ (0::ne-1) :* (0.8/(ne-1)); ///
+		      pos = 1 :+ (rows(xq)-1) :* probs; lo = floor(pos); hi = ceil(pos); ///
+		      g = pos :- lo; qs = xq[lo] :+ g :* (xq[hi] :- xq[lo]); ///
+		      st_store((1::ne), "`temp_grid'", qs)
+	}
 	else {
 		cap confirm numeric variable `eval'
 		if _rc {
@@ -88,35 +90,28 @@ program define kdbwselect, eclass
 	**** error check: kernel()
 	if ("`kernel'" == "") {
 		local kernel = "epanechnikov"
-	} 
+	}
 	else {
-		if ("`kernel'" != "triangular" & "`kernel'" != "uniform" & "`kernel'" != "epanechnikov") {
-			di as err `"kernel(): incorrectly specified: options(triangular, uniform, epanechnikov)"'
+		if ("`kernel'" != "uni" & "`kernel'" != "uniform" & "`kernel'" != "epa" & "`kernel'" != "epanechnikov") {
+			di as err `"kernel(): incorrectly specified. Supported kernels for kdbwselect: epa, uni."'
 			exit 198
 		}
 	}
 
 
-	if ("`kernel'"=="epanechnikov" | "`kernel'"=="epa"| "`kernel'"=="") {
+	if ("`kernel'"=="epanechnikov" | "`kernel'"=="epa" | "`kernel'"=="") {
 		local kernel_type = "Epanechnikov"
 		local C_c = 2.34
 		local C_h = 2.34
 		local C_b = 3.49
 	}
-	else if ("`kernel'"=="uniform" | "`kernel'"=="uni") {
-		local kernel_type = "Uniform"
-		local C_c = 1.843
-	}
 	else {
-		local kernel_type = "Triangular"
-		local C_c = 2.576
+		local kernel_type = "Uniform"
+		local C_c = 1.06
+		local C_h = 1.06
+		local C_b = 1
 	}
 	
-	if ("`neval'"=="0") {
-		local neval = 30
-	}
-
-
 	********************************************************************************
 	**** error check: separator()
 	if (`separator' <= 1) {
@@ -148,14 +143,13 @@ program define kdbwselect, eclass
 	bws = J(`neval', 2, .)
 	Vh=Bh= J(`neval', 1, .)
 	if("`bwselect'"=="all")  bws = J(`neval', 8, .)
-    *bws_C_dpi = bws_C_rot = J(`neval',4,.)
-    	
+
 	***********************************************************************
 
-    *if ("`bwselect'"=="imse-rot" | "`bwselect'"=="imse" |  "`bwselect'"=="all") {
+	* h_imse_rot/b_imse_rot are used in every bwselect path below (mse-dpi,
+	* imse-dpi, mse-rot, imse-rot, all), so compute unconditionally.
 	h_imse_rot = `x_sd'*`C_h'*`n'^(-1/(1+2*`p'))
 	b_imse_rot = `x_sd'*`C_b'*`n'^(-1/(1+2*(`p'+2)+2*`p'))
-    *}
 	
 		
 	if ("`kernel'"=="epanechnikov" | "`kernel'"=="epa") {
@@ -172,41 +166,85 @@ program define kdbwselect, eclass
 	}
 			
 	for (e=1; e<=`neval'; e++) {
-				
+
+		// bwcheck: per-eval floor on h/b set to the bwcheck-th smallest
+		// |x-eval[i]| (mirrors R kdbwselect.R lines 146-150).
+		bw_min = .
+		if (`bwcheck' > 0) {
+			bw_min = sort(abs(x:-eval[e]), 1)[min((`bwcheck', `n'))]
+		}
+
 		uh = (x:-eval[e])/h_imse_rot
 		ub = (x:-eval[e])/b_imse_rot
-	
+
 		Kx = nprobust_K_fun(uh, "`kernel'")
 		Lx = nprobust_L_fun(ub, "`kernel'")
-				
+
 		f_h = mean(Kx)/h_imse_rot
 		f_b = mean(Lx)/b_imse_rot^(1+`p')
-		
+
 		Bh[e] = f_b*mK
 		Vh[e] = f_h*vK
-		
+
 		h_mse_dpi = ((1+2*`deriv')*Vh[e]/(2*`p'*`n'*Bh[e]^2))^(1/(1+2*`p'+2*`deriv'))
 		b_mse_dpi = b_imse_rot
-	
-		bws[e,1::2] = h_mse_dpi, b_mse_dpi		
-		   
-  	
-		
+
+		if (`bwcheck' > 0) {
+			h_mse_dpi = max((h_mse_dpi, bw_min))
+			b_mse_dpi = max((b_mse_dpi, bw_min))
+		}
+
+		bws[e,1::2] = h_mse_dpi, b_mse_dpi
+
+
+
 		if ("`bwselect'"=="ce-rot"  | "`bwselect'"=="all") {
 		  h_ce_rot = h_mse_dpi*`n'^(-(`p'-2)/((1+2*`p')*(1+`p'+2)))
 		  b_ce_rot = b_mse_dpi*`n'^(-(`p'-2)/((1+2*`p')*(1+`p'+2)))
-		  	  
+
+		  if (`bwcheck' > 0) {
+			h_ce_rot = max((h_ce_rot, bw_min))
+			b_ce_rot = max((b_ce_rot, bw_min))
+		  }
+
 		  bws[e,1::2] = h_ce_rot, b_ce_rot
 		}
-		
-	  if("`bwselect'"=="all") bws[e,1::4] = h_mse_dpi,b_mse_dpi, h_ce_rot,b_ce_rot  
+
+	  if("`bwselect'"=="all") bws[e,1::4] = h_mse_dpi,b_mse_dpi, h_ce_rot,b_ce_rot
     }
-	
-		
-		
+
+
+
 
 	if ("`bwselect'"=="imse-dpi" | "`bwselect'"=="all") {
-    h_imse_dpi = ((1+2*`deriv')*mean(Vh)/(2*`p'*`n'*mean(Bh)^2))^(1/(1+2*`p'+2*`deriv'))
+	// IMSE averaging must be on a representative grid independent of the
+	// user's eval points; mirror R kdbwselect imsegrid quantile grid
+	// from p=0.1 to p=0.9.
+	imsegrid = `imsegrid'
+	qseq_imse = range(0.1, 0.9, 0.8/(imsegrid-1))
+	xs = sort(x, 1)
+	eval_imse = J(imsegrid, 1, .)
+	for (gi=1; gi<=imsegrid; gi++) {
+		// R quantile() type 7: linear interpolation on (k-1)/(n-1).
+		qpos = qseq_imse[gi]*(`n'-1) + 1
+		lo   = floor(qpos)
+		hi   = ceil(qpos)
+		if (lo==hi) eval_imse[gi] = xs[lo]
+		else        eval_imse[gi] = xs[lo] + (qpos-lo)*(xs[hi]-xs[lo])
+	}
+	Vh_imse = J(imsegrid, 1, .)
+	Bh_imse = J(imsegrid, 1, .)
+	for (gi=1; gi<=imsegrid; gi++) {
+		uh = (x:-eval_imse[gi])/h_imse_rot
+		ub = (x:-eval_imse[gi])/b_imse_rot
+		Kx = nprobust_K_fun(uh, "`kernel'")
+		Lx = nprobust_L_fun(ub, "`kernel'")
+		f_h = mean(Kx)/h_imse_rot
+		f_b = mean(Lx)/b_imse_rot^(1+`p')
+		Bh_imse[gi] = f_b*mK
+		Vh_imse[gi] = f_h*vK
+	}
+    h_imse_dpi = ((1+2*`deriv')*mean(Vh_imse)/(2*`p'*`n'*mean(Bh_imse)^2))^(1/(1+2*`p'+2*`deriv'))
 	b_imse_dpi = b_imse_rot
     if ("`bwselect'"=="all") {
       bws[,5] = J(`neval',1,h_imse_dpi)
@@ -295,10 +333,10 @@ program define kdbwselect, eclass
 	}
   	
 	ereturn clear
-	ereturn scalar n = `n'
+	ereturn scalar N = `n'
 	ereturn local kernel = "`kernel_type'"
 	ereturn local bwselect = "`bwselect'"
-	ereturn local varname "`x'"
+	ereturn local xvar "`x'"
 	ereturn local cmd "kdbwselect"
 	ereturn matrix bws = bws
 	ereturn matrix eval = eval

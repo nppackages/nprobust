@@ -1,0 +1,9 @@
+^codemeta\.json$
+^cran-comments\.md$
+^\.Rproj\.user$
+^doc$
+^Meta$
+^data-raw$
+^figure$
+Rplots\.pdf$
+^.*\.Rcheck$

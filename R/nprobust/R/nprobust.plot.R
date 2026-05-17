@@ -1,3 +1,10 @@
+## S3 plot() and autoplot() wrappers
+plot.lprobust <- function(x, ...) nprobust.plot(x, ...)
+plot.kdrobust <- function(x, ...) nprobust.plot(x, ...)
+
+autoplot.lprobust <- function(object, ...) nprobust.plot(object, ...)
+autoplot.kdrobust <- function(object, ...) nprobust.plot(object, ...)
+
 nprobust.plot <- function(..., alpha=NULL, type=NULL, CItype=NULL,
                           title="", xlabel="", ylabel="",
                           lty=NULL, lwd=NULL, lcol=NULL, pty=NULL, pwd=NULL, pcol=NULL,
@@ -9,7 +16,14 @@ nprobust.plot <- function(..., alpha=NULL, type=NULL, CItype=NULL,
 
   x <- list(...)
   nfig <- length(x)
-  if (nfig == 0) stop("Nothing to plot.\n")
+  if (nfig == 0) stop("Nothing to plot.", call. = FALSE)
+
+  # Type guard: only lprobust/kdrobust outputs have an Estimate matrix
+  bad <- !vapply(x, inherits, logical(1), what = c("lprobust", "kdrobust"))
+  if (any(bad))
+    stop("nprobust.plot() inputs must be 'lprobust' or 'kdrobust' results; ",
+         "got ", paste(unique(unlist(lapply(x[bad], class))), collapse=", "), ".",
+         call. = FALSE)
 
   ########################################
   # error handling
@@ -17,8 +31,8 @@ nprobust.plot <- function(..., alpha=NULL, type=NULL, CItype=NULL,
   # alpha
   if (length(alpha) == 0) {
     alpha <- rep(0.05, nfig)
-  } else if (!all(alpha>0 & alpha<1)) {
-    stop("Significance level incorrectly specified.\n")
+  } else if (!is.numeric(alpha) || any(!is.finite(alpha)) || !all(alpha > 0 & alpha < 1)) {
+    stop("alpha must be numeric with all entries in (0, 1).", call. = FALSE)
   } else {
     alpha <- rep(alpha, length.out=nfig)
   }
@@ -27,18 +41,18 @@ nprobust.plot <- function(..., alpha=NULL, type=NULL, CItype=NULL,
   if (length(type) == 0) {
     type <- rep("line", nfig)
   } else {
-    if (!all(type%in%c("line", "points", "both"))) {
-      stop("Plotting type incorrectly specified.\n")
+    if (!all(type %in% c("line", "points", "both"))) {
+      stop("type must be one of \"line\", \"points\", \"both\".", call. = FALSE)
     }
     type <- rep(type, length.out=nfig)
-  } 
+  }
 
   # CI type
   if (length(CItype) == 0) {
     CItype <- rep("region", nfig)
   } else {
-    if (!all(CItype%in%c("region", "line", "ebar", "all", "none"))) {
-      stop("Confidence interval type incorrectly specified.\n")
+    if (!all(CItype %in% c("region", "line", "ebar", "all", "none"))) {
+      stop("CItype must be one of \"region\", \"line\", \"ebar\", \"all\", \"none\".", call. = FALSE)
     }
     CItype <- rep(CItype, length.out=nfig)
   }
@@ -148,7 +162,7 @@ nprobust.plot <- function(..., alpha=NULL, type=NULL, CItype=NULL,
     ########################################
     # add lines to the plot
     if (type[i]%in%c("line", "both")) {
-      temp_plot <- temp_plot + geom_line(data=data_x, aes(x=eval, y=tau.us, colour=Sname, linetype=Sname), size=lwd[i])
+      temp_plot <- temp_plot + geom_line(data=data_x, aes(x=eval, y=tau.us, colour=Sname, linetype=Sname), linewidth=lwd[i])
     }
 
     ########################################

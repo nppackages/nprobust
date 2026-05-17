@@ -1,16 +1,66 @@
-kdrobust <- function(x, eval=NULL, neval=NULL, h=NULL, b=NULL, rho=1, kernel="epa", 
-                    bwselect=NULL, bwcheck=21, imsegrid=30, level=95, subset = NULL) {
-  
+kdrobust <- function(x, eval=NULL, neval=NULL, h=NULL, b=NULL, rho=1, kernel="epa",
+                    bwselect=NULL, bwcheck=21, imsegrid=30, level=95, subset = NULL,
+                    data = NULL) {
+
+  if (!is.null(data)) {
+    mc <- match.call()
+    caller_env <- parent.frame()
+    .lookup <- function(arg) {
+      expr <- mc[[arg]]
+      if (is.null(expr)) return(NULL)
+      eval(expr, envir = data, enclos = caller_env)
+    }
+    x <- .lookup("x")
+    if ("subset" %in% names(mc)) subset <- .lookup("subset")
+  }
+
   p <- 2
   deriv <- 0
   if (!is.null(subset)) x <- x[subset]
-  na.ok <- complete.cases(x) 
+
+  ## UX prechecks: catch invalid h/b/bwcheck/imsegrid with clear messages
+  .nperrs <- character()
+  .bwbad <- function(v, name) {
+    if (is.null(v))         return(NULL)
+    if (!is.numeric(v))     return(paste0(name, " must be numeric."))
+    if (any(!is.finite(v))) return(paste0(name, " contains non-finite values (NA/Inf)."))
+    if (any(v <= 0))        return(paste0(name, " must be strictly positive."))
+    NULL
+  }
+  .nperrs <- c(.nperrs, .bwbad(h, "h"), .bwbad(b, "b"))
+  if (!is.null(bwcheck) && (!is.numeric(bwcheck) || length(bwcheck) != 1 || !is.finite(bwcheck) || bwcheck <= 0))
+    .nperrs <- c(.nperrs, "bwcheck must be a single positive finite integer.")
+  if (!is.numeric(imsegrid) || length(imsegrid) != 1 || !is.finite(imsegrid) || imsegrid <= 0)
+    .nperrs <- c(.nperrs, "imsegrid must be a single positive finite integer.")
+  if (!is.numeric(level) || length(level) != 1 || !is.finite(level) || level <= 0 || level >= 100)
+    .nperrs <- c(.nperrs, "level must be a single number in (0, 100).")
+  if (!is.numeric(rho) || length(rho) != 1 || !is.finite(rho) || rho < 0)
+    .nperrs <- c(.nperrs, "rho must be a single non-negative number.")
+  if (!is.null(eval)) {
+    if (!is.numeric(eval) || any(!is.finite(eval)))
+      .nperrs <- c(.nperrs, "eval must be numeric and finite.")
+    if (length(eval) == 0L)
+      .nperrs <- c(.nperrs, "eval must have at least one element.")
+  }
+  if (length(.nperrs) > 0) {
+    for (.m in .nperrs) warning(.m, call. = FALSE)
+    stop("nprobust: invalid input (see warnings above).", call. = FALSE)
+  }
+
+  na.ok <- complete.cases(x)
   x <- x[na.ok]
   
   x.min <- min(x);  x.max <- max(x)
   N <- length(x)
-  #quant <- -qnorm(abs((1-(level/100))/2))
-  
+
+  if (!is.null(bwcheck)) {
+    if (bwcheck > N) {
+      warning("bwcheck (", bwcheck, ") is larger than the sample size (", N,
+              "); reducing bwcheck to N.")
+      bwcheck <- N
+    }
+  }
+
   if (is.null(eval)) {
     if (is.null(neval)) {
       qseq <- seq(0.1,0.9,length.out=30)
@@ -30,54 +80,38 @@ kdrobust <- function(x, eval=NULL, neval=NULL, h=NULL, b=NULL, rho=1, kernel="ep
     }
   }
   neval <- length(eval)
-  
+
+  ## Precheck (continued): h/b length must be 1 or neval
+  .nperrs2 <- character()
+  if (!is.null(h) && length(h) != 1L && length(h) != neval)
+    .nperrs2 <- c(.nperrs2, paste0("h must have length 1 or neval (=", neval, ")."))
+  if (!is.null(b) && length(b) != 1L && length(b) != neval)
+    .nperrs2 <- c(.nperrs2, paste0("b must have length 1 or neval (=", neval, ")."))
+  if (length(.nperrs2) > 0) {
+    for (.m in .nperrs2) warning(.m, call. = FALSE)
+    stop("nprobust: invalid input (see warnings above).", call. = FALSE)
+  }
+
   if (is.null(h) & is.null(bwselect) & neval==1) bwselect="mse-dpi"
-  if (is.null(h) & is.null(bwselect) & neval>1)  bwselect="imse-dpi"  
+  if (is.null(h) & is.null(bwselect) & neval>1)  bwselect="imse-dpi"
   
   kernel   <- tolower(kernel)
   bwselect <- tolower(bwselect)
-  
-  #####################################################   CHECK ERRORS
-  exit<-0
-    #if (kernel!="uni" & kernel!="uniform" & kernel!="tri" & kernel!="triangular" & kernel!="epa" & kernel!="epanechnikov" & kernel!="" ){
-    #  print("kernel incorrectly specified")
-    #  exit = 1
-    #}
-    
-  #if  (bwselect!="imse-rot" & bwselect!="imse-dpi" & bwselect!="mse-dpi" & bwselect!="ce-dpi" & bwselect!="ce-rot" & bwselect!="all" & !is.null(bwselect)){
-  #  print("bwselect incorrectly specified")  
-  #  exit = 1
-  #}
-  
-    #if (min(eval)<x.min | max(eval)>x.max){
-    #  print("evaluation points should be set within the range of x")
-    #  exit = 1
-    #}
-    
-    if (p<0 | deriv<0 ){
-      print("p should be positive integer")
-      exit = 1
-    }
-    
-    
-    if (level>100 | level<=0){
-      print("level should be set between 0 and 100")
-      exit = 1
-    }
-    
-    #if (!is.null(rho)){  
-       if (rho<0){
-          print("rho should be greater than 0")
-          exit = 1
-        }
-    #}
-  
-    if (exit>0) stop()
-    if (!is.null(h)) bwselect = "Manual"
 
-  kernel.type <- "Gaussian"  
-  if (kernel=="epa") kernel.type <- "Epanechnikov"
-  if (kernel=="uni") kernel.type <- "Uniform"
+  #####################################################   CHECK ERRORS
+  if (!(kernel %in% c("epa","epanechnikov","uni","uniform"))) {
+    stop("kernel incorrectly specified. Supported kernels for kdrobust: epa, uni.")
+  }
+  if (kernel %in% c("epanechnikov")) kernel <- "epa"
+  if (kernel %in% c("uniform"))      kernel <- "uni"
+
+  if (identical(bwselect, "all"))
+    stop("bwselect=\"all\" is only supported by kdbwselect; kdrobust requires a single method (e.g. \"mse-dpi\", \"imse-dpi\", \"ce-dpi\").",
+         call. = FALSE)
+
+  if (!is.null(h)) bwselect <- "Manual"
+
+  kernel.type <- if (kernel == "epa") "Epanechnikov" else "Uniform"
 
   if (!is.null(h) & rho>0 & is.null(b)) {
     #rho <- rep(1,neval)
@@ -121,8 +155,12 @@ kdrobust <- function(x, eval=NULL, neval=NULL, h=NULL, b=NULL, rho=1, kernel="ep
     f.bc  <- mean(M)/h[i]
     se.us <- sqrt((mean((K^2)) - mean(K)^2)/(N*h[i]^2))
     se.rb <- sqrt((mean((M^2)) - mean(M)^2)/(N*h[i]^2))
-    
-    eN = sum(M>0)
+
+    if (kernel == "gau") {
+      eN <- N
+    } else {
+      eN <- sum(abs(x - eval[i]) <= max(h[i], b[i]))
+    }
     
     Estimate[i,] <- c(eval[i], h[i], b[i], eN, f.us, f.bc, se.us, se.rb) 
   }
@@ -134,38 +172,45 @@ kdrobust <- function(x, eval=NULL, neval=NULL, h=NULL, b=NULL, rho=1, kernel="ep
 
 print.kdrobust <- function(x,...){
   cat("Call: kdrobust\n\n")
-  
+
   cat(paste("Sample size (n)                            =     ", x$opt$n,        "\n", sep=""))
   cat(paste("Kernel order for point estimation (p)      =     ", x$opt$p,        "\n", sep=""))
   cat(paste("Kernel function                            =     ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth method                           =     ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
-  
-# cat("Use summary(...) to show estimates.\n")
+
+  invisible(x)
 }
 
-summary.kdrobust <- function(object,...) {
-  x <- object
-  args <- list(...)
-  if (is.null(args[['alpha']])) { alpha <- 0.05 } else { alpha <- args[['alpha']] }
-  if (is.null(args[['sep']]))   { sep <- 5 } else { sep <- args[['sep']] }
-  
+summary.kdrobust <- function(object, alpha = 0.05, sep = 5, ...) {
+  z    <- qnorm(1 - alpha / 2)
+  CI_l <- object$Estimate[, "tau.bc"] - object$Estimate[, "se.rb"] * z
+  CI_r <- object$Estimate[, "tau.bc"] + object$Estimate[, "se.rb"] * z
+
+  out <- list(opt      = object$opt,
+              Estimate = object$Estimate,
+              alpha    = alpha,
+              sep      = sep,
+              CI_l     = CI_l,
+              CI_r     = CI_r)
+  class(out) <- "summary.kdrobust"
+  out
+}
+
+print.summary.kdrobust <- function(x, ...) {
   cat("Call: kdrobust\n\n")
-  
+
   cat(paste("Sample size (n)                            =     ", x$opt$n,        "\n", sep=""))
   cat(paste("Kernel order for point estimation (p)      =     ", x$opt$p,        "\n", sep=""))
   cat(paste("Kernel function                            =     ", x$opt$kernel,   "\n", sep=""))
   cat(paste("Bandwidth selection method                 =     ", x$opt$bwselect, "\n", sep=""))
   cat("\n")
-  
-  ### compute CI
-  z <- qnorm(1 - alpha / 2)
-  CI_l <- x$Estimate[, "tau.bc"] - x$Estimate[, "se.rb"] * z;
-  CI_r <- x$Estimate[, "tau.bc"] + x$Estimate[, "se.rb"] * z;
-  
-  ### print output
+
+  alpha <- x$alpha
+  sep   <- x$sep
+
   cat(paste(rep("=", 14 + 10 + 8 + 10 + 10 + 25), collapse="")); cat("\n")
-  
+
   cat(format(" ", width= 14 ))
   cat(format(" ", width= 10 ))
   cat(format(" ", width= 8  ))
@@ -173,8 +218,7 @@ summary.kdrobust <- function(object,...) {
   cat(format("Std." , width= 10, justify="right"))
   cat(format("Robust B.C.", width=25, justify="centre"))
   cat("\n")
-  
-  
+
   cat(format("eval"            , width=14, justify="right"))
   cat(format("bw"              , width=10, justify="right"))
   cat(format("Eff.n"           , width=8 , justify="right"))
@@ -183,9 +227,9 @@ summary.kdrobust <- function(object,...) {
   cat(format(paste("[ ", floor((1-alpha)*100), "%", " C.I. ]", sep="")
              , width=25, justify="centre"))
   cat("\n")
-  
+
   cat(paste(rep("=", 14 + 10 + 8 + 10 + 10 + 25), collapse="")); cat("\n")
-  
+
   for (j in 1:nrow(x$Estimate)) {
     cat(format(toString(j), width=4))
     cat(format(sprintf("%3.3f", x$Estimate[j, "eval"]), width=10, justify="right"))
@@ -193,13 +237,15 @@ summary.kdrobust <- function(object,...) {
     cat(format(sprintf("%3.0f", x$Estimate[j, "N"])  , width=8 , justify="right"))
     cat(format(sprintf("%3.3f", x$Estimate[j, "tau.us"]) , width=10, justify="right"))
     cat(format(paste(sprintf("%3.3f", x$Estimate[j, "se.us"]), sep=""), width=10, justify="right"))
-    cat(format(paste("[", sprintf("%3.3f", CI_l[j]), " , ", sep="")  , width=14, justify="right"))
-    cat(format(paste(sprintf("%3.3f", CI_r[j]), "]", sep=""), width=11, justify="left"))
+    cat(format(paste("[", sprintf("%3.3f", x$CI_l[j]), " , ", sep="")  , width=14, justify="right"))
+    cat(format(paste(sprintf("%3.3f", x$CI_r[j]), "]", sep=""), width=11, justify="left"))
     cat("\n")
     if (is.numeric(sep)) if (sep > 0) if (j %% sep == 0) {
       cat(paste(rep("-", 14 + 10 + 8 + 10 + 10 + 25), collapse="")); cat("\n")
     }
   }
-  
+
   cat(paste(rep("=", 14 + 10 + 8 + 10 + 10 + 25), collapse="")); cat("\n")
+
+  invisible(x)
 }

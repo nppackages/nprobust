@@ -1,4 +1,4 @@
-*!version 0.4.0  2025-04-14
+*!version 1.0.0  2026-05-17
   
 capture mata mata drop nprobust_w_fun()
 mata
@@ -185,15 +185,20 @@ end
 *************************************************************************************************************************************************************
 capture mata mata drop nprobust_lp_bw()
 mata
-real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real scalar c, real scalar o, real scalar nu, real scalar o_B, real scalar h_V, real scalar h_B1, real scalar h_B2, real scalar scale, string vce, real scalar nnmatch, string kernel, dups, dupsid)
+real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real scalar c, real scalar o, real scalar nu, real scalar o_B, real scalar h_V, real scalar h_B1, real scalar h_B2, real scalar scale, string vce, real scalar nnmatch, string kernel, dups, dupsid, real matrix wts)
 {
 	dC = eC = indC = 0
-	w = nprobust_lp_kweight(X, c, h_V, kernel)
+	w = nprobust_lp_kweight(X, c, h_V, kernel) :* wts
 	ind_V = selectindex(w:> 0); eY = Y[ind_V];eX = X[ind_V];eW = w[ind_V]
 	n_V = length(ind_V)
 	D_V = eY
-	R_V = J(n_V,o+1,.)
-	for (j=1; j<=(o+1); j++) R_V[.,j] = (eX:-c):^(j-1)
+	// Q1: Vandermonde via successive multiplication (matches rdrobust).
+	R_V = J(n_V,o+1,1)
+	if (o >= 1) {
+		u_V = eX :- c
+		R_V[.,2] = u_V
+		for (j=3; j<=(o+1); j++) R_V[.,j] = R_V[.,j-1] :* u_V
+	}
 	invG_V = cholinv(quadcross(R_V,eW,R_V))
 	e_v = J((o+1),1,0); e_v[nu+1]=1
 	
@@ -212,10 +217,8 @@ real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real sca
 	if (vce=="hc0" | vce=="hc1" | vce=="hc2" | vce=="hc3") {
 		predicts_V=R_V*beta_V
 		if (vce=="hc2" | vce=="hc3") {
-			hii=J(n_V,1,.)	
-				for (i=1; i<=n_V; i++) {
-					hii[i] = R_V[i,]*invG_V*(R_V:*eW)[i,]'
-				}
+			// Vectorized: diag(R (R' W R)^{-1} R' W) = rowsum((R invG) :* (R W))
+			hii = rowsum((R_V*invG_V) :* (R_V:*eW))
 		}
 	}	
 	res_V = nprobust_lp_res(eX, eY, predicts_V, hii, vce, nnmatch, dups_V, dupsid_V, o+1)
@@ -229,20 +232,25 @@ real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real sca
 	BConst1 = (diag(Hp)*(invG_V*v1))[nu+1]
 	BConst2 = (diag(Hp)*(invG_V*v2))[nu+1]
 		
-	w = nprobust_lp_kweight(X, c, h_B1, kernel)
-	ind = selectindex(w:> 0) 
+	w = nprobust_lp_kweight(X, c, h_B1, kernel) :* wts
+	ind = selectindex(w:> 0)
 	n_B = length(ind)
 	eY = Y[ind];eX = X[ind];eW = w[ind]
 
 	if (dC==1) {
 		eC   = C[ind]
-		indC = order(eC,1) 
-	}	
-	
-	R_B1 = J(n_B,o_B+1,.)
-	for (j=1; j<=(o_B+1); j++) R_B1[.,j] = (eX:-c):^(j-1)
+		indC = order(eC,1)
+	}
+
+	// Q1: Vandermonde via successive multiplication.
+	R_B1 = J(n_B,o_B+1,1)
+	if (o_B >= 0) {  // o_B+1 >= 1 always
+		u_B1 = eX :- c
+		if (o_B+1 >= 2) R_B1[.,2] = u_B1
+		for (j=3; j<=(o_B+1); j++) R_B1[.,j] = R_B1[.,j-1] :* u_B1
+	}
 	invG_B1 = cholinv(quadcross(R_B1,eW,R_B1))
-	beta_B1 = invG_B1*quadcross(R_B1:*eW,eY)	
+	beta_B1 = invG_B1*quadcross(R_B1:*eW,eY)
 	
   
   	BWreg=0
@@ -256,10 +264,7 @@ real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real sca
 		if (vce=="hc0" | vce=="hc1" | vce=="hc2" | vce=="hc3") {
 			predicts_B=R_B1*beta_B1
 			if (vce=="hc2" | vce=="hc3") {
-				hii=J(n_B,1,.)	
-					for (i=1; i<=n_B; i++) {
-						hii[i] = R_B1[i,]*invG_B1*(R_B1:*eW)[i,]'
-				}
+				hii = rowsum((R_B1*invG_B1) :* (R_B1:*eW))
 			}
 		}	
 		res_B = nprobust_lp_res(eX, eY, predicts_B, hii, vce, nnmatch, dups_B, dupsid_B, o_B+1)		        
@@ -267,15 +272,18 @@ real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real sca
 		BWreg = 3*BConst1^2*V_B
 	}
 	
-    w = nprobust_lp_kweight(X, c, h_B2, kernel)
-	ind = selectindex(w:> 0) 
+	w = nprobust_lp_kweight(X, c, h_B2, kernel) :* wts
+	ind = selectindex(w:> 0)
 	n_B = length(ind)
 	eY = Y[ind];eX = X[ind];eW = w[ind]
-  
-	R_B2 = J(n_B,o_B+2,.)
-	for (j=1; j<=(o_B+2); j++) R_B2[.,j] = (eX:-c):^(j-1)
+
+	// Q1: Vandermonde via successive multiplication.
+	R_B2 = J(n_B,o_B+2,1)
+	u_B2 = eX :- c
+	R_B2[.,2] = u_B2
+	for (j=3; j<=(o_B+2); j++) R_B2[.,j] = R_B2[.,j-1] :* u_B2
 	invG_B2 = cholinv(quadcross(R_B2,eW,R_B2))
-	beta_B2 = invG_B2*quadcross(R_B2:*eW,eY)	
+	beta_B2 = invG_B2*quadcross(R_B2:*eW,eY)
 	
 	N  = length(X)
 	B1 =  BConst1*(beta_B1[o+2,]')
@@ -290,6 +298,76 @@ real matrix nprobust_lp_bw(real matrix Y, real matrix X, real matrix C, real sca
 	return(B1, B2, V, R, B_rate, V_rate, h_rate, bw)	
 }
 mata mosave nprobust_lp_bw(), replace
+end
+
+
+****************************************************
+** Cluster-robust meat for CR0, CR1, CR2, CR3.
+** X:       N x k design (standardized for classical; Q for bias-corrected).
+** r:       length-N residuals (std sqrt(W)*raw for classical; raw for BC).
+** C_o:     cluster IDs for the reduced sample, already sorted.
+** ind:     order() index that maps (C, RX, res) into the sorted frame.
+** invG:    k x k inverse Gram for the same design.
+** cr_type: one of "CR0", "CR1", "CR2", "CR3".
+capture mata mata drop nprobust_lp_cluster_meat()
+mata
+real matrix nprobust_lp_cluster_meat(real matrix X, real matrix r, real matrix C, real matrix ind, real matrix invG, string cr_type, real scalar k_override)
+{
+	// k_override: when > 0, overrides the (N-1)/(N-k) df correction's k for
+	// CR1. Used when X is a "score-like" matrix (e.g. Q_q) whose ncol is
+	// smaller than the effective number of regressors that produced r.
+	// Pass 0 to use cols(X) as before.
+	C_o   = C[ind]
+	X_o   = X[ind,]
+	r_o   = r[ind]
+	info  = panelsetup(C_o,1)
+	G     = rows(info)
+	N     = length(r_o)
+	k     = cols(X_o)
+	k_df  = (k_override > 0 ? k_override : k)
+	M     = J(k,k,0)
+
+	for (g=1; g<=G; g++) {
+		Xg = panelsubmatrix(X_o, g, info)
+		rg = panelsubmatrix(r_o, g, info)
+
+		if (cr_type=="CR0" | cr_type=="CR1") {
+			r_adj = rg
+		}
+		else {
+			H_gg = Xg*invG*Xg'
+			H_gg = 0.5*(H_gg + H_gg')
+			I_H  = I(rows(Xg)) - H_gg
+			if (cr_type=="CR2") {
+				vals = vecs = .
+				symeigensystem(I_H, vecs, vals)
+				// symeigensystem returns eigenvalues as a row vector;
+				// convert to column and floor at 1e-12 for stability.
+				vals = vals'
+				vals = vals :* (vals :>= 1e-12) :+ 1e-12 :* (vals :< 1e-12)
+				r_adj = vecs*((vecs'*rg):/sqrt(vals))
+			}
+			else { // CR3
+				r_adj = lusolve(I_H, rg)
+				if (hasmissing(r_adj)) {
+					vals = vecs = .
+					symeigensystem(I_H, vecs, vals)
+					vals = vals'
+					vals = vals :* (vals :>= 1e-12) :+ 1e-12 :* (vals :< 1e-12)
+					r_adj = vecs*((vecs'*rg):/vals)
+				}
+			}
+		}
+		score = Xg'*r_adj
+		M = M + score*score'
+	}
+
+	mult = 1
+	if (cr_type=="CR1") mult = ((N-1)/(N-k_df))*(G/(G-1))
+	if (cr_type=="CR3") mult = (G-1)/G
+	return(mult*M)
+}
+mata mosave nprobust_lp_cluster_meat(), replace
 end
 
 
@@ -333,175 +411,199 @@ capture mata mata drop nprobust_lp_q()
 mata
 real matrix nprobust_lp_q(real matrix y, real matrix x, real matrix K, real matrix L, real matrix res, real scalar c, real scalar h, real scalar b, real scalar p, real scalar q, real scalar deriv)
 {
+	N   = length(y)
+	rho = h / b
+	Wp  = K:/h
+	Wq  = L:/b
+	Xh  = (x:-c):/h
+	Xb  = (x:-c):/b
 
-  N = length(y)
-  rho = h / b
-  
-  Wp = K:/h
-  Wq = L:/b
-  Xh = (x:-c):/h
-  Xb = (x:-c):/b
-  Rq = J(N,(q+1),.)
-  Rp = J(N,(p+1),.)
-  for (i=1; i<=(q+1); i++) {
-	Rq[.,i] = Xb:^(i-1)
-  }
-	Rp = Rq[,1::(p+1)]	 
-  
-  Lp1 = quadcross(Rp:*Wp,Xh:^(p+1))/N
-  iGq  = N*cholinv(quadcross(Rq,Wq,Rq))
-  iGp  = N*cholinv(quadcross(Rp,Wp,Rp))
-  
-  ep1 = J(q+1,1,0)
-  ep1[p+2]=1
-  e0 = J(p+1,1,0)
-  e0[deriv+1]=factorial(deriv+1)
-        
-  lus0 = e0'*iGp*(diag(K)*Rp)'
-  lbc0 = lus0 - rho^(p+1)*(e0'*iGp)*Lp1*ep1'*iGq*(diag(L)*Rq)'
-  vx = res:^2
-  
-  sums2=0
-  for (i=1; i<=N; i++) {
-     sums2 = sums2+ (lbc0[i]^2)*vx[i]
-  }
-  s2=sums2/(N*h)
-  
-  Krrp  = J(p+1,p+1,0)
-  Krxip = J(1,p+1,0)
-  Krxp  = J(1,p+1,0)
-  Lrrq  = J(q+1,q+1,0)
-  
-  for (i=1; i<=N; i++) {
-    Rpi = Rp[i,.]
-    Rqi = Rq[i,.]
-    Krrp  = Krrp +  K[i]*Rpi'*Rpi
-    Lrrq  = Lrrq +  L[i]*Rqi'*Rqi
-    Krxip = Krxip + K[i]*Rpi*Xh[i]^(p+1) 
-	for (j=1; j<=N; j++) {
-       if (j != i) Krxp = Krxp + K[i]*Rpi*Xh[j]^(p+1) 
-    }
-  }
-  
-  EKrrp = Krrp/N
-  EKrxp = Krxp/(N*(N-1))
-  EKrxip = Krxip/N
-  ELrrq = Lrrq/N
+	Rp = J(N, p+1, 1)
+	if (p >= 1) {
+		Rp[.,2] = Xh
+		for (i=3; i<=(p+1); i++) Rp[.,i] = Rp[.,i-1] :* Xh
+	}
+	Rq = J(N, q+1, 1)
+	if (q >= 1) {
+		Rq[.,2] = Xb
+		for (i=3; i<=(q+1); i++) Rq[.,i] = Rq[.,i-1] :* Xb
+	}
 
-  q1=J(1,1,0)
-  q2=J(1,1,0)
-  q3=J(1,1,0)
-  q4=J(1,1,0)
-  q5a=J(1,q+1,0)
-  q5b=J(q+1,1,0)
-  q6=J(1,1,0)
-  q7a=J(1,q+1,0)
-  q7b=J(q+1,q+1,0)
-  q7c=J(q+1,1,0)
-  q8=J(1,1,0)
-  q9=J(1,1,0)
-  q10=J(1,1,0)
-  q11=J(1,1,0)
-  q12=J(1,1,0)
-  q3a=J(1,1,0)  
+	Lp1 = quadcross(Rp, Wp:*Xh:^(p+1)) / N
+	Gp  = quadcross(Rp, Wp, Rp) / N
+	Gq  = quadcross(Rq, Wq, Rq) / N
+	iGp = luinv(Gp)
+	iGq = luinv(Gq)
 
+	ep1 = J(q+1,1,0); ep1[p+2] = 1
+	e0  = J(p+1,1,0); e0[deriv+1] = factorial(deriv)
 
-  for (i=1; i<=N; i++) {
-  
-    Rpi = Rp[i,.]
-    Rqi = Rq[i,.]
-    
-    q1 = q1 + (lbc0[i]*res[i])^3
-    
-    lus1 = factorial(deriv+1)*iGp[deriv+1,.] * (EKrrp - K[i]*Rpi'*Rpi)*iGp*K[i]*Rpi'
-    T1   = iGp[deriv+1,.] * ((EKrrp - K[i]*Rpi'*Rpi)*iGp*Lp1*ep1')    *(iGq*L[i]*Rqi')
-    T2   = iGp[deriv+1,.] * ((K[i]*Rpi*Xh[i]^(p+1) - EKrxip)')*ep1'*(iGq*L[i]*Rqi')
-    T3   = iGp[deriv+1,.] * ((Lp1*ep1'*iGq)*(ELrrq - L[i]*Rqi'*Rqi))  *(iGq*L[i]*Rqi')
-    lbc1 = lus1 - factorial(deriv+1)*rho^(p+1)*(T1 + T2 + T3)
-    
-    q2 = q2 + lbc1*lbc0[i]*res[i]^2
-    
-    q3 = q3 + (lbc0[i]^4)*((res[i]^4)-vx[i]^2)
-    
-    q4 = q4 + (lbc0[i]^2)*(Rqi*iGq*L[i]*Rqi')*(res[i]^2)
+	lus0     = (e0'*iGp) * (Rp:*K)'
+	scale_bc = (e0'*iGp) * Lp1
+	tail_bc  = (ep1'*iGq) * (Rq:*L)'
+	lbc0     = lus0' - rho^(p+1) * scale_bc * tail_bc'
 
-    q5a = q5a + (lbc0[i]^3)*(Rqi*iGq)*(res[i]^2)
-    q5b = q5b + L[i]*Rqi'*lbc0[i]*(res[i]^2)
-    
-    q7a = q7a + lbc0[i]*(res[i]^2)*L[i]*Rqi*iGq
-    q7b = q7b + (lbc0[i]^2)*Rqi'*Rqi*iGq
-    q7c = q7c + lbc0[i]*(res[i]^2)*L[i]*Rqi'
-    
-    q8  = q8 + (lbc0[i]^4)*(res[i]^4)
-    q9  = q9 + ((lbc0[i]^2)*vx[i]-h*s2)*(lbc0[i]*res[i])^2
-    
-    q12 = q12 + ((lbc0[i]^2)*vx[i]-h*s2)^2
+	vx = res:^2
+	s2 = sum((lbc0:^2):*vx) / (N*h)
 
-    q3a = q3a + (lbc0[i]*res[i])^3
+	Krrp   = quadcross(Rp:*K, Rp)
+	Lrrq   = quadcross(Rq:*L, Rq)
+	Krxip  = quadcross(Rp, K:*Xh:^(p+1))
+	sumKRp = quadcross(Rp, K)
+	Sxp1   = sum(Xh:^(p+1))
+	Krxp   = sumKRp:*Sxp1 - Krxip
 
-    for (j=1; j<=N; j++) {  
-      if (j != i) {
-        Rpj = Rp[j,.]
-        Rqj = Rq[j,.]
-        
-        lus1 = iGp[1,.] *  (EKrrp - K[j]*Rpj'*Rpj)*iGp*K[i]*Rpi'
-        T1   = iGp[1,.] * ((EKrrp - K[j]*Rpj'*Rpj)*iGp*Lp1*ep1')    *(iGq*L[i]*Rqi')
-        T2   = iGp[1,.] * ((K[j]*Rpj*Xh[i]^(p+1) - EKrxp)')*ep1' *(iGq*L[i]*Rqi')
-        T3   = iGp[1,.] * ((Lp1*ep1'*iGq)*(ELrrq - L[j]*Rqj'*Rqj))  *(iGq*L[i]*Rqi')
-        lbc1 = lus1 - rho^(p+1)*(T1 + T2 + T3)
-   
-        q10 = q10 + lbc1*lbc0[i]*(lbc0[j]*res[j])^2*vx[i]
-        q11 = q11 + lbc1*lbc0[i]*((lbc0[j]^2)*vx[j]-h*s2)*(res[i]^2)
-        
-        q6 = q6 + (lbc0[i]^2)*(Rqi*iGq*L[j]*Rqj')^2*(res[j]^2) 
-       }
-    }
-  }
-  
+	EKrrp      = Krrp / N
+	EKrxip_vec = Krxip / N
+	EKrxp_vec  = Krxp / (N*(N-1))
+	ELrrq      = Lrrq / N
 
-  Eq1  = (q1/(N*h))^2
-  Eq2  = q2/(N*h)
-  Eq3  = q3/(N*h)
-  Eq4  = q4/(N*h)
-  Eq5  = (q5a/(N*h))*(q5b/(N*h))
-  Eq6  = q6/(N*(N-1)*(h^2))
-  
-  Eq7  = (q7a/(N*h))*(q7b/(N*h))*(q7c/(N*h))
+	a_row = factorial(deriv) * iGp[deriv+1,.]
+	u_a   = a_row
+	v_a   = a_row * EKrrp * iGp
 
-  Eq8  = q8/(N*h)
-  Eq9  = q9/(N*h)
-  Eq10 = q10/(N*(N-1)*(h^2))
-  Eq11 = q11/(N*(N-1)*(h^2))
-  Eq12 = q12/(N*h)
-  
-  z  = 1.959964
-  pz = 0.05844507
-  
-  q1bc =   pz*(
-       Eq1*((z^3)/3+7*z/4+s2*z*((z^2)-3)/4)/(s2^3)
-    +  Eq2*(-z*((z^2)-3)/2)/s2
-    +  Eq3*(z*((z^2)-3)/8)/(s2^2) 
-    -  Eq4*(z*((z^2)-1)/2)/s2 
-    -  Eq5*(z*((z^2)-1))/(s2^2) 
-    +  Eq6*(z*((z^2)-1)/4)/s2 
-    +  Eq7*(z*((z^2)-1)/2)/(s2^2) 
-    +  Eq8*(-z*((z^2)-3)/24)/(s2^2) 
-    +  Eq9*(z*((z^2)-1)/4)/(s2^2) 
-    +  Eq10*(z*((z^2)-3))/(s2^2) 
-    +  Eq11*(-z)/(s2^2) 
-    +  Eq12*(-z*((z^2)+1)/8)/(s2^2)
-    )
-    
-    q2bc = -pz*z/(2*s2)
-    
-    Eq3a = q3a/(N*h)
-    q3bc = pz*Eq3a/(s2^2)*(z^3)/3
-    
-    q1rbc = 2*q1bc/pz
-    q2rbc = 2*q2bc/pz
-    q3rbc = 2*q3bc/pz
-	
-	return(q1rbc,q2rbc,q3rbc)	
+	RpiGp  = Rp * iGp
+	RqiGq  = Rq * iGq
+	quadRp = rowsum(RpiGp:*Rp)
+	quadRq = rowsum(RqiGq:*Rq)
+
+	Rp_va = Rp * v_a'
+	Rp_ua = Rp * u_a'
+
+	q1  = sum((lbc0:*res):^3)
+	q3  = sum((lbc0:^4):*((res:^4) - (vx:^2)))
+	q3a = q1
+	q8  = sum((lbc0:*res):^4)
+	q9  = sum(((lbc0:^2):*vx :- h*s2) :* ((lbc0:*res):^2))
+	q12 = sum(((lbc0:^2):*vx :- h*s2):^2)
+	q4  = sum((lbc0:^2):*L:*quadRq:*vx)
+
+	q5a = colsum(RqiGq :* ((lbc0:^3):*vx))
+	q5b = colsum(Rq    :* (lbc0:*vx:*L))'
+	q7a = colsum(RqiGq :* (lbc0:*vx:*L))
+	q7b = quadcross(Rq:*lbc0, Rq:*lbc0) * iGq
+	q7c = colsum(Rq    :* (lbc0:*vx:*L))'
+
+	lus1_diag = K:*Rp_va - (K:^2):*Rp_ua:*quadRp
+
+	C1_scalar   = (a_row * EKrrp * iGp * Lp1)[1,1]
+	v_iGq_ep1   = iGq * ep1
+	C2_vec      = Rq * v_iGq_ep1
+	v_lp        = iGp * Lp1
+	D2_vec      = Rp * v_lp
+	T1_diag     = L:*C2_vec:*(C1_scalar :- K:*Rp_ua:*D2_vec)
+	dot_a_krxip = (a_row * EKrxip_vec)[1,1]
+	T2_diag     = L:*C2_vec:*(K:*Xh:^(p+1):*Rp_ua :- dot_a_krxip)
+	a_Lp1       = (a_row * Lp1)[1,1]
+	u_T3        = a_Lp1 * (ep1' * iGq)
+	u_T3_ELrrq_iGq = u_T3 * ELrrq * iGq
+	Rq_uT3          = Rq * u_T3'
+	Rq_uT3_ELrrq    = Rq * u_T3_ELrrq_iGq'
+	T3_diag         = L:*Rq_uT3_ELrrq - (L:^2):*Rq_uT3:*quadRq
+	lbc1_diag       = lus1_diag - rho^(p+1) * (T1_diag + T2_diag + T3_diag)
+	q2              = sum(lbc1_diag:*lbc0:*vx)
+
+	a_q6 = lbc0:^2
+	b_q6 = (L:^2):*vx
+	A_q6 = quadcross(Rq, a_q6, Rq)
+	B_q6 = quadcross(Rq, b_q6, Rq)
+	total_q6 = sum(A_q6 :* (iGq * B_q6 * iGq))
+	diag_q6  = sum(a_q6:*b_q6:*(quadRq:^2))
+	q6 = total_q6 - diag_q6
+
+	dot_a_krxp = (a_row * EKrxp_vec)[1,1]
+	Xhpp1      = Xh:^(p+1)
+	alpha      = K:*Rp_va
+	gamma      = K:*Rp_ua
+	delta      = L:*C2_vec
+	epsilon    = K:*Rp_ua:*D2_vec
+	zeta       = L:*Rq_uT3_ELrrq
+	eta_v      = L:*Rq_uT3
+
+	f = lbc0:*vx
+	g = (lbc0:^2):*vx
+	sum_g   = sum(g)
+	sum_df  = sum(delta:*f)
+	fg      = f:*g
+	sum_dfg = sum(delta:*fg)
+	St_A  = sum(alpha:*f) * sum_g
+	Sd_A  = sum(alpha:*fg)
+	uB    = quadcross(Rp, K:*f)
+	vB    = quadcross(Rp, gamma:*g)
+	St_B = (uB' * iGp * vB)[1,1]
+	Sd_B = sum(K:*gamma:*quadRp:*fg)
+	St_T1 = C1_scalar*sum_df*sum_g - sum_df*sum(epsilon:*g)
+	Sd_T1 = sum(delta:*fg:*(C1_scalar :- epsilon))
+	St_T2 = sum(delta:*Xhpp1:*f)*sum(gamma:*g) - dot_a_krxp*sum_df*sum_g
+	Sd_T2 = sum(delta:*Xhpp1:*gamma:*fg) - dot_a_krxp*sum_dfg
+	uT3x  = quadcross(Rq, L:*f)
+	vT3x  = quadcross(Rq, eta_v:*g)
+	St_T3 = sum(zeta:*f)*sum_g - (uT3x' * iGq * vT3x)[1,1]
+	Sd_T3 = sum(zeta:*fg) - sum(L:*eta_v:*quadRq:*fg)
+	q10 = (St_A - St_B - rho^(p+1)*(St_T1 + St_T2 + St_T3)) - ///
+	      (Sd_A - Sd_B - rho^(p+1)*(Sd_T1 + Sd_T2 + Sd_T3))
+
+	g = (lbc0:^2):*vx :- h*s2
+	sum_g   = sum(g)
+	sum_df  = sum(delta:*f)
+	fg      = f:*g
+	sum_dfg = sum(delta:*fg)
+	St_A  = sum(alpha:*f) * sum_g
+	Sd_A  = sum(alpha:*fg)
+	uB    = quadcross(Rp, K:*f)
+	vB    = quadcross(Rp, gamma:*g)
+	St_B = (uB' * iGp * vB)[1,1]
+	Sd_B = sum(K:*gamma:*quadRp:*fg)
+	St_T1 = C1_scalar*sum_df*sum_g - sum_df*sum(epsilon:*g)
+	Sd_T1 = sum(delta:*fg:*(C1_scalar :- epsilon))
+	St_T2 = sum(delta:*Xhpp1:*f)*sum(gamma:*g) - dot_a_krxp*sum_df*sum_g
+	Sd_T2 = sum(delta:*Xhpp1:*gamma:*fg) - dot_a_krxp*sum_dfg
+	uT3x  = quadcross(Rq, L:*f)
+	vT3x  = quadcross(Rq, eta_v:*g)
+	St_T3 = sum(zeta:*f)*sum_g - (uT3x' * iGq * vT3x)[1,1]
+	Sd_T3 = sum(zeta:*fg) - sum(L:*eta_v:*quadRq:*fg)
+	q11 = (St_A - St_B - rho^(p+1)*(St_T1 + St_T2 + St_T3)) - ///
+	      (Sd_A - Sd_B - rho^(p+1)*(Sd_T1 + Sd_T2 + Sd_T3))
+
+	Eq1  = (q1/(N*h))^2
+	Eq2  = q2/(N*h)
+	Eq3  = q3/(N*h)
+	Eq4  = q4/(N*h)
+	Eq5  = (q5a*q5b)/(N*h)^2
+	Eq6  = q6/(N*(N-1)*(h^2))
+	Eq7  = (q7a*q7b*q7c)/(N*h)^3
+	Eq8  = q8/(N*h)
+	Eq9  = q9/(N*h)
+	Eq10 = q10/(N*(N-1)*(h^2))
+	Eq11 = q11/(N*(N-1)*(h^2))
+	Eq12 = q12/(N*h)
+
+	z  = 1.959964
+	pz = 0.05844507
+
+	q1bc = pz*(
+	     Eq1*((z^3)/3+7*z/4+s2*z*((z^2)-3)/4)/(s2^3)
+	  +  Eq2*(-z*((z^2)-3)/2)/s2
+	  +  Eq3*(z*((z^2)-3)/8)/(s2^2)
+	  -  Eq4*(z*((z^2)-1)/2)/s2
+	  -  Eq5*(z*((z^2)-1))/(s2^2)
+	  +  Eq6*(z*((z^2)-1)/4)/s2
+	  +  Eq7*(z*((z^2)-1)/2)/(s2^2)
+	  +  Eq8*(-z*((z^2)-3)/24)/(s2^2)
+	  +  Eq9*(z*((z^2)-1)/4)/(s2^2)
+	  +  Eq10*(z*((z^2)-3))/(s2^2)
+	  +  Eq11*(-z)/(s2^2)
+	  +  Eq12*(-z*((z^2)+1)/8)/(s2^2)
+	  )
+	q2bc = -pz*z/(2*s2)
+	Eq3a = q3a/(N*h)
+	q3bc = pz*Eq3a/(s2^2)*(z^3)/3
+
+	q1rbc = 2*q1bc/pz
+	q2rbc = 2*q2bc/pz
+	q3rbc = 2*q3bc/pz
+
+	return(q1rbc,q2rbc,q3rbc)
 }
 mata mosave nprobust_lp_q(), replace
 end
@@ -519,40 +621,198 @@ end
 
 capture mata mata drop nprobust_lp_cer()
 mata
-void nprobust_lp_cer(real scalar todo, real scalar H,  real vector E, real scalar q2_rbc, real scalar p, real scalar N, val, grad, hess) 
-{	
-	val = abs(H^(-1)*E[1] + N*H^(2*p+5)*q2_rbc*0.05844094*(E[2] + H*E[3])^2 + H^(p+2)*(E[4]+H*E[5]))
+void nprobust_lp_cer(real scalar todo, real scalar H,  real vector E, real scalar q2_rbc, real scalar p, real scalar N, val, grad, hess)
+{
+	// Bug fix: leading term is E[1]/(N*H), not E[1]/H (mirrors R).
+	val = abs(E[1]/(N*H) + N*H^(2*p+5)*q2_rbc*normalden(1.96)*(E[2] + H*E[3])^2 + H^(p+2)*(E[4]+H*E[5]))
 }
 mata mosave nprobust_lp_cer(), replace
 end
 	
 capture mata mata drop nprobust_lp_mse()
 mata
-void nprobust_lp_mse(real scalar todo, real scalar h,  real scalar V, real vector B, real scalar p, real scalar v, real scalar n, val, grad, hess) 
-{	
-	val = abs(h^(2*p+2-v)*(B[1]+h*B[2])^2 + V/(n*h^(1+2*v)))
+void nprobust_lp_mse(real scalar todo, real scalar h,  real scalar V, real vector B, real scalar p, real scalar v, real scalar n, val, grad, hess)
+{
+	// R uses H^(2p+2-2*deriv) (npfunctions.R:769, 779, 800, 815, 887);
+	// the prior exponent 2*p+2-v was off by a factor 2 on deriv. This
+	// only affects the optimize branch (even & !interior cases).
+	val = abs(h^(2*p+2-2*v)*(B[1]+h*B[2])^2 + V/(n*h^(1+2*v)))
 }
 mata mosave nprobust_lp_mse(), replace
+end
+
+// IMSE-RoT optimizer: argmin H of |H^(2p+2-2v) mean(B^2) + mean(V)/(N H^(1+2v))|.
+// Mirrors the optimize branch of R lpbwselect.imse.rot (npfunctions.R:720-722).
+capture mata mata drop nprobust_lp_mse_imse()
+mata
+void nprobust_lp_mse_imse(real scalar todo, real scalar h, real scalar mV, real scalar mBsq, real scalar p, real scalar v, real scalar n, val, grad, hess)
+{
+	val = abs(h^(2*p+2-2*v)*mBsq + mV/(n*h^(1+2*v)))
+}
+mata mosave nprobust_lp_mse_imse(), replace
+end
+
+// Golden-section search on [a,b] for the per-point MSE-RoT bandwidth.
+// Mirrors R optimize() with interval=c(.Machine$double.eps, range) used
+// in lpbwselect.mse.rot (npfunctions.R:887-888). Returns argmin H of
+//   abs(H^(2p+2-2v)*(B1 + H*B2)^2 + V/(N*H^(1+2v))).
+capture mata mata drop nprobust_lp_brent_mserot()
+mata
+real scalar nprobust_lp_brent_mserot(real scalar V, real vector B, real scalar p, real scalar v, real scalar N, real scalar lo, real scalar hi)
+{
+	real scalar cg, a, b, x, w, vv, u, d, e, fx, fw, fv, fu
+	real scalar xm, tol, tol1, tol2, pp, qq, rr, iter, eps
+	cg  = (3-sqrt(5))/2
+	eps = sqrt(2.220446049250313e-16)
+	tol = sqrt(eps)
+	a = lo; b = hi
+	x = a + cg*(b-a)
+	w = x
+	vv = x
+	d = e = 0
+	fx = abs(x^(2*p+2-2*v)*(B[1]+x*B[2])^2 + V/(N*x^(1+2*v)))
+	fw = fv = fx
+	for (iter=1; iter<=500; iter++) {
+		xm = 0.5*(a+b)
+		tol1 = eps*abs(x) + tol/3
+		tol2 = 2*tol1
+		if (abs(x-xm) <= tol2 - 0.5*(b-a)) break
+		pp = qq = rr = 0
+		if (abs(e) > tol1) {
+			rr = (x-w)*(fx-fv)
+			qq = (x-vv)*(fx-fw)
+			pp = (x-vv)*qq - (x-w)*rr
+			qq = 2*(qq-rr)
+			if (qq > 0) pp = -pp
+			else        qq = -qq
+			rr = e
+			e = d
+		}
+		if (abs(pp) >= abs(0.5*qq*rr) | pp <= qq*(a-x) | pp >= qq*(b-x)) {
+			e = (x < xm ? b-x : a-x)
+			d = cg*e
+		}
+		else {
+			d = pp/qq
+			u = x + d
+			if ((u-a) < tol2 | (b-u) < tol2) d = (xm >= x ? tol1 : -tol1)
+		}
+		u = (abs(d) >= tol1 ? x+d : x + (d > 0 ? tol1 : -tol1))
+		fu = abs(u^(2*p+2-2*v)*(B[1]+u*B[2])^2 + V/(N*u^(1+2*v)))
+		if (fu <= fx) {
+			if (u < x) b = x
+			else       a = x
+			vv = w; fv = fw
+			w = x;  fw = fx
+			x = u;  fx = fu
+		}
+		else {
+			if (u < x) a = u
+			else       b = u
+			if (fu <= fw | w == x) {
+				vv = w; fv = fw
+				w = u;  fw = fu
+			}
+			else if (fu <= fv | vv == x | vv == w) {
+				vv = u; fv = fu
+			}
+		}
+	}
+	return(x)
+}
+mata mosave nprobust_lp_brent_mserot(), replace
+end
+
+// Golden-section search for CE-DPI interior=FALSE branch. Mirrors R
+// optimize() in lpbwselect.ce.dpi npfunctions.R:656-657:
+//   abs(E1/(N*H) + N*H^(2p+5)*q2*phi*(E2 + H*E3 + bwregul*Reg)^2
+//                + H^(p+2)*(E4 + H*E5 + bwregul*Reg))
+// (Reg=0 since R hard-codes bwregul=0; we mirror that.)
+capture mata mata drop nprobust_lp_brent_cedpi()
+mata
+real scalar nprobust_lp_brent_cedpi(real vector E, real scalar q2, real scalar p, real scalar N, real scalar lo, real scalar hi)
+{
+	real scalar cg, a, b, x, w, vv, u, d, e, fx, fw, fv, fu
+	real scalar xm, tol, tol1, tol2, pp, qq, rr, iter, eps, phiz
+	cg = (3-sqrt(5))/2
+	eps = sqrt(2.220446049250313e-16)
+	tol = sqrt(eps)
+	phiz = normalden(1.96)  // R: dnorm(1.96) = 0.0584409443334515 (full precision)
+	a = lo; b = hi
+	x = a + cg*(b-a)
+	w = x
+	vv = x
+	d = e = 0
+	fx = abs(E[1]/(N*x) + N*x^(2*p+5)*q2*phiz*(E[2]+x*E[3])^2 + x^(p+2)*(E[4]+x*E[5]))
+	fw = fv = fx
+	for (iter=1; iter<=500; iter++) {
+		xm = 0.5*(a+b)
+		tol1 = eps*abs(x) + tol/3
+		tol2 = 2*tol1
+		if (abs(x-xm) <= tol2 - 0.5*(b-a)) break
+		pp = qq = rr = 0
+		if (abs(e) > tol1) {
+			rr = (x-w)*(fx-fv)
+			qq = (x-vv)*(fx-fw)
+			pp = (x-vv)*qq - (x-w)*rr
+			qq = 2*(qq-rr)
+			if (qq > 0) pp = -pp
+			else        qq = -qq
+			rr = e
+			e = d
+		}
+		if (abs(pp) >= abs(0.5*qq*rr) | pp <= qq*(a-x) | pp >= qq*(b-x)) {
+			e = (x < xm ? b-x : a-x)
+			d = cg*e
+		}
+		else {
+			d = pp/qq
+			u = x + d
+			if ((u-a) < tol2 | (b-u) < tol2) d = (xm >= x ? tol1 : -tol1)
+		}
+		u = (abs(d) >= tol1 ? x+d : x + (d > 0 ? tol1 : -tol1))
+		fu = abs(E[1]/(N*u) + N*u^(2*p+5)*q2*phiz*(E[2]+u*E[3])^2 + u^(p+2)*(E[4]+u*E[5]))
+		if (fu <= fx) {
+			if (u < x) b = x
+			else       a = x
+			vv = w; fv = fw
+			w = x;  fw = fx
+			x = u;  fx = fu
+		}
+		else {
+			if (u < x) a = u
+			else       b = u
+			if (fu <= fw | w == x) {
+				vv = w; fv = fw
+				w = u;  fw = fu
+			}
+			else if (fu <= fv | vv == x | vv == w) {
+				vv = u; fv = fu
+			}
+		}
+	}
+	return(x)
+}
+mata mosave nprobust_lp_brent_cedpi(), replace
 end
 
 
 *** MSE-DPI
 capture mata mata drop nprobust_lp_mse_dpi()
 mata
-real matrix nprobust_lp_mse_dpi(real vector Y, real vector X, real vector C, real scalar eval,  real scalar p, real scalar q, real scalar deriv, real scalar even, string kernel, real scalar c_bw, real scalar bwcheck, real scalar bwregul, string vce, real scalar nnmatch, real vector dups, real vector dupsid, string interior) 
-{		
+real matrix nprobust_lp_mse_dpi(real vector Y, real vector X, real vector C, real scalar eval,  real scalar p, real scalar q, real scalar deriv, real scalar even, string kernel, real scalar c_bw, real scalar bwcheck, real scalar bwregul, string vce, real scalar nnmatch, real vector dups, real vector dupsid, string interior, real matrix wts)
+{
 range = max(X)-min(X)
 N = length(X)
 bw_max = max((abs(eval-min(X)),abs(eval-max(X))))
 c_bw = min((c_bw, bw_max))
 
 		if (bwcheck != 0) {
-			bw_min = sort(abs(X:-eval), 1)[bwcheck] + 1e-8
+			bw_min = sort(abs(X:-eval), 1)[bwcheck]
 			c_bw = max((c_bw, bw_min))
 		}
-		
-    C_d1 = nprobust_lp_bw(Y, X, C, eval, q+1, q+1, q+2, c_bw, range, range, 0, vce, nnmatch, kernel, dups, dupsid)
 
+    C_d1 = nprobust_lp_bw(Y, X, C, eval, q+1, q+1, q+2, c_bw, range, range, 0, vce, nnmatch, kernel, dups, dupsid, wts)
     if (even==0 | interior!="") {
 		bw_mp2  = C_d1[8]
 	} else {
@@ -574,7 +834,7 @@ c_bw = min((c_bw, bw_max))
 		bw_mp2 = optimize_result_params(S)
 	}
 	
-	C_d2 = nprobust_lp_bw(Y, X, C, eval, q+2, q+2, q+3, c_bw, range, range, 0, vce, nnmatch, kernel, dups, dupsid)
+	C_d2 = nprobust_lp_bw(Y, X, C, eval, q+2, q+2, q+3, c_bw, range, range, 0, vce, nnmatch, kernel, dups, dupsid, wts)
     if (even==0 | interior!="") {
 		bw_mp3  = C_d2[8]
 	} else {
@@ -604,9 +864,9 @@ c_bw = min((c_bw, bw_max))
 			bw_mp3 = max((bw_mp3, bw_min))
 		}		
 		
-      C_b  = nprobust_lp_bw(Y, X, C, eval, q, p+1, q+1, c_bw, bw_mp2, bw_mp3, bwregul, vce, nnmatch, kernel, dups, dupsid)
+      C_b  = nprobust_lp_bw(Y, X, C, eval, q, p+1, q+1, c_bw, bw_mp2, bw_mp3, bwregul, vce, nnmatch, kernel, dups, dupsid, wts)
       if (even==0 | interior!="") {
-		b_mse_dpi = C_b[8]     
+		b_mse_dpi = C_b[8]
 	  } else {
 	  	B_b = C_b[1], C_b[2]
 		V_b  = C_b[3]
@@ -634,9 +894,9 @@ c_bw = min((c_bw, bw_max))
 		
 		bw_mp1 = b_mse_dpi
 		
-      C_h  = nprobust_lp_bw(Y, X, C, eval, p, deriv, q, c_bw, bw_mp1, bw_mp2, bwregul, vce, nnmatch, kernel, dups, dupsid)
+      C_h  = nprobust_lp_bw(Y, X, C, eval, p, deriv, q, c_bw, bw_mp1, bw_mp2, bwregul, vce, nnmatch, kernel, dups, dupsid, wts)
 	  if (even==0 | interior!="") {
-		h_mse_dpi = C_h[8]     
+		h_mse_dpi = C_h[8]
 	  } else {
 	  	B_h = C_h[1], C_h[2]
 		V_h  = C_h[3]
@@ -680,19 +940,80 @@ mata mosave nprobust_lp_mse_dpi(), replace
 end
 
 
-capture mata mata drop nprobust_lp_coef() 
+// Compute the kernel constants C1 and C2 used by the local-polynomial
+// rule-of-thumb bandwidth (mirrors R lp.bw.fun in npfunctions.R:282-314).
+//   C1 = (Sinv NU)[v+1]
+//   C2 = (Sinv PSI Sinv)[v+1, v+1]
+// where Sinv = inv(GAMMA(p,K)), GAMMA[i,j] = m1(i+j,K),
+//       NU[i] = m1(i+p+1,K), PSI[i,j] = m2(i+j,K),
+// with m1(k,K) = ∫₀^∞ x^k K(x) dx and m2(k,K) = ∫₀^∞ x^k K(x)² dx.
+// Closed forms are used for epa, uni, tri; the half-Gaussian moments
+// for gau use Γ((k+1)/2)·2^((k-1)/2)/√π and Γ((k+1)/2)/(4π).
+capture mata mata drop nprobust_lp_kmom1()
 mata
-real matrix nprobust_lp_coef(real matrix Y, real matrix X, real scalar eval, real scalar deriv, real scalar p, real scalar h, string kernel) 
+real scalar nprobust_lp_kmom1(real scalar k, string kernel)
+{
+	if (kernel=="epa") return(0.75 * (1/(k+1) - 1/(k+3)))
+	if (kernel=="uni") return(0.5 / (k+1))
+	if (kernel=="tri") return(1/(k+1) - 1/(k+2))
+	// gaussian: ∫₀^∞ x^k φ(x) dx = 2^((k-1)/2) Γ((k+1)/2) / √π
+	return(exp(((k-1)/2)*ln(2) + lngamma((k+1)/2) - 0.5*ln(pi())))
+}
+mata mosave nprobust_lp_kmom1(), replace
+end
+
+capture mata mata drop nprobust_lp_kmom2()
+mata
+real scalar nprobust_lp_kmom2(real scalar k, string kernel)
+{
+	if (kernel=="epa") return(0.5625 * (1/(k+1) - 2/(k+3) + 1/(k+5)))
+	if (kernel=="uni") return(0.25 / (k+1))
+	if (kernel=="tri") return(1/(k+1) - 2/(k+2) + 1/(k+3))
+	// gaussian: ∫₀^∞ x^k φ(x)² dx = Γ((k+1)/2) / (4π)·... full form:
+	// φ²(x) = (1/(2π)) exp(-x²); ∫₀^∞ x^k exp(-x²) dx = (1/2) Γ((k+1)/2)
+	return(exp(lngamma((k+1)/2) - ln(2) - ln(2*pi())))
+}
+mata mosave nprobust_lp_kmom2(), replace
+end
+
+capture mata mata drop nprobust_lp_constants()
+mata
+real rowvector nprobust_lp_constants(real scalar p, real scalar v, string kernel)
+{
+	GAMMA = J(p+1, p+1, .)
+	NU    = J(p+1, 1, .)
+	PSI   = J(p+1, p+1, .)
+	for (i=0; i<=p; i++) {
+		NU[i+1] = nprobust_lp_kmom1(i+p+1, kernel)
+		for (j=0; j<=p; j++) {
+			GAMMA[i+1,j+1] = nprobust_lp_kmom1(i+j, kernel)
+			PSI[i+1,j+1]   = nprobust_lp_kmom2(i+j, kernel)
+		}
+	}
+	Sinv = invsym(GAMMA)
+	C1   = (Sinv*NU)[v+1]
+	C2   = (Sinv*PSI*Sinv)[v+1, v+1]
+	return((C1, C2))
+}
+mata mosave nprobust_lp_constants(), replace
+end
+
+capture mata mata drop nprobust_lp_coef()
+mata
+real matrix nprobust_lp_coef(real matrix Y, real matrix X, real scalar eval, real scalar deriv, real scalar p, real scalar h, string kernel)
 {
 		w_h = nprobust_lp_kweight(X,eval,h,kernel);	
 		ind = selectindex(w_h:> 0)
 		eN = length(ind)
 		eY  = Y[ind];eX  = X[ind];
 		W_h = w_h[ind]
-		R_p = J(eN,(p+1),.)
-			for (j=1; j<=(p+1); j++)  {
-				R_p[.,j] = (eX:-eval):^(j-1)
-			}		
+		// Q1: Vandermonde via successive multiplication.
+		R_p = J(eN,(p+1),1)
+		if (p >= 1) {
+			u_R = eX :- eval
+			R_p[.,2] = u_R
+			for (j=3; j<=(p+1); j++) R_p[.,j] = R_p[.,j-1] :* u_R
+		}
 		invG_p  = cholinv(quadcross(R_p,W_h,R_p))
 		beta_p = invG_p*quadcross(R_p:*W_h,eY)
 		tau = factorial(deriv)*beta_p[(deriv+1),1]
@@ -720,11 +1041,13 @@ real matrix nprobust_lp_mse_rot(real vector Y, real vector X, real scalar eval, 
   if (kernel=="uni") C.c         = 1.843
   if (kernel=="tri") C.c         = 2.576
 	    k = p+3
-	  
-      rk = J(N,(k+1),.) 
-	  for (j=1; j<=(k+1); j++) {
-	    rk[.,j] = X:^(j-1)
-	  }	
+
+      // Q1: Vandermonde via successive multiplication.
+      rk = J(N,(k+1),1)
+      if (k >= 1) {
+        rk[.,2] = X
+        for (j=3; j<=(k+1); j++) rk[.,j] = rk[.,j-1] :* X
+      }
 	  iGp  = cholinv(quadcross(rk,rk))
 	  gamma_p = iGp*quadcross(rk,Y)
 	  s2_hat = mean((rk*gamma_p:-Y):^2)
@@ -856,7 +1179,6 @@ return(w,mK,vK)
 mata mosave nprobust_kd_L(), replace
 end
 */
-
 
 
 
