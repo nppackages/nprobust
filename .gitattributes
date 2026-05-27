@@ -36,6 +36,7 @@ NAMESPACE text eol=lf
 
 *.dta binary
 *.docx binary
+*.mlib binary
 *.mo binary
 *.pdf binary
 *.rda binary

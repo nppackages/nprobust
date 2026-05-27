@@ -1021,6 +1021,15 @@ real matrix nprobust_lp_coef(real matrix Y, real matrix X, real scalar eval, rea
 }
 mata mosave nprobust_lp_coef(), replace
 end
+
+capture erase lnprobust.mlib
+mata: mata mlib create lnprobust, replace
+mata: mata mlib add lnprobust nprobust_w_fun() nprobust_K_fun() nprobust_L_fun() nprobust_K() nprobust_L()
+mata: mata mlib add lnprobust nprobust_lp_res() nprobust_lp_kweight() nprobust_lp_bw() nprobust_lp_cluster_meat() nprobust_lp_vce()
+mata: mata mlib add lnprobust nprobust_lp_q() nprobust_lp_cer() nprobust_lp_mse() nprobust_lp_mse_imse()
+mata: mata mlib add lnprobust nprobust_lp_brent_mserot() nprobust_lp_brent_cedpi() nprobust_lp_mse_dpi()
+mata: mata mlib add lnprobust nprobust_lp_kmom1() nprobust_lp_kmom2() nprobust_lp_constants() nprobust_lp_coef()
+mata: mata mlib index
 	
 	
 
